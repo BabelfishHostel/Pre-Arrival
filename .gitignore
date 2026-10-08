@@ -1,0 +1,22 @@
+# Datenbanken und Gästedaten gehören nie ins Repository
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+downloads/
+
+# Zugangsdaten
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs und Editor
+*.log
+.vscode/
+.idea/
