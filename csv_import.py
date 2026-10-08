@@ -12,7 +12,11 @@ Verhalten:
     * Je RegNummer genau ein Gast; erneute Importe aktualisieren ihn.
     * Fehlerhafte Zeilen (keine/ungültige E-Mail, unlesbares Datum) werden
       übersprungen und im import_log vermerkt, der Rest wird importiert.
+      Ist keine einzige Zeile lesbar, wird nichts importiert und nichts
+      vermerkt (ImportFehler), damit ein verändertes Format auffällt.
     * Fehlen Pflichtspalten, wird nichts importiert (ImportFehler).
+    * Eine Datei nur mit Kopfzeile oder ganz ohne Inhalt gilt als Tag ohne
+      Anreisen: Sie wird im import_log vermerkt, es werden 0 Gäste importiert.
     * Straße, PLZ und Stadt werden bewusst nicht gespeichert.
 
 Aufruf:
@@ -33,7 +37,11 @@ from typing import List, Optional
 from db import init_db, jetzt, verbinde
 
 PFLICHTSPALTEN = ["RegNummer", "Anreise", "Abreise", "Email"]
-DATUMSFORMATE = ["%d.%m.%y %H:%M", "%d.%m.%Y %H:%M", "%d.%m.%y", "%d.%m.%Y"]
+DATUMSFORMATE = [
+    "%d.%m.%y %H:%M", "%d.%m.%Y %H:%M", "%d.%m.%y %H:%M:%S", "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%y", "%d.%m.%Y",
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d",
+]
 EMAIL_MUSTER = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -79,7 +87,10 @@ def _zeile_lesen(zeile: dict) -> dict:
         raise ValueError(f"ungültige oder fehlende E-Mail ({email or 'leer'})")
     anreise, abreise = _datum(zeile.get("Anreise")), _datum(zeile.get("Abreise"))
     if not anreise or not abreise:
-        raise ValueError("Anreise oder Abreise nicht lesbar")
+        raise ValueError(
+            "Anreise oder Abreise nicht lesbar "
+            f"(Anreise={zeile.get('Anreise')!r}, Abreise={zeile.get('Abreise')!r})"
+        )
     try:
         personen = int((zeile.get("AnzahlPersonen") or "").strip())
     except ValueError:
@@ -129,6 +140,16 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
     rohdaten = Path(pfad).read_bytes()
     pruefsumme = hashlib.sha256(rohdaten).hexdigest()
 
+    # Altlast aus früheren Versionen: Eine Datei, bei der keine einzige Zeile
+    # lesbar war, darf nicht als "bereits importiert" gelten, sonst gingen die
+    # Gäste verloren. Solche Einträge werden verworfen und die Datei neu gelesen.
+    with conn:
+        conn.execute(
+            "DELETE FROM import_log WHERE sha256 = ? AND zeilen_gesamt > 0"
+            " AND zeilen_fehler = zeilen_gesamt",
+            (pruefsumme,),
+        )
+
     vorhanden = conn.execute(
         "SELECT id FROM import_log WHERE sha256 = ?", (pruefsumme,)
     ).fetchone()
@@ -144,7 +165,7 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
     kopf = [(s or "").strip() for s in (leser.fieldnames or [])]
     leser.fieldnames = kopf
     fehlend = [s for s in PFLICHTSPALTEN if s not in kopf]
-    if fehlend:
+    if fehlend and text.strip():  # völlig leere Datei = Tag ohne Anreisen
         raise ImportFehler(f"Pflichtspalten fehlen: {', '.join(fehlend)}")
 
     ergebnis = ImportErgebnis()
@@ -175,6 +196,12 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
                 ergebnis.aktualisiert += 1
             else:
                 ergebnis.neu += 1
+
+        if ergebnis.gesamt and ergebnis.fehler == ergebnis.gesamt:
+            # Kein einziger Gast lesbar: vermutlich ein verändertes Dateiformat.
+            # Exception => Rollback, die Datei wird nicht als importiert vermerkt.
+            beispiele = "; ".join(ergebnis.fehler_details[:3])
+            raise ImportFehler(f"Alle {ergebnis.gesamt} Zeilen fehlerhaft, z. B. {beispiele}")
 
         conn.execute(
             "UPDATE import_log SET zeilen_gesamt=?, zeilen_neu=?, zeilen_aktualisiert=?,"

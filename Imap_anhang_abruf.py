@@ -338,6 +338,27 @@ def hole_anhang(
         raise
  
  
+def quote_ordner(name: str) -> str:
+    """Setzt einen IMAP-Ordnernamen in Anführungszeichen.
+
+    imaplib quotet Argumente nicht selbst. Ohne Anführungszeichen zerlegt der
+    Server Namen mit Leerzeichen (z. B. 'Anreise in 2 Tagen') in mehrere
+    Argumente und antwortet mit 'BAD Command Argument Error'.
+
+    Args:
+        name: Ordnername, nur ASCII (Umlaute erfordern modifiziertes UTF-7).
+
+    Returns:
+        Name in Anführungszeichen, Backslash und Anführungszeichen maskiert.
+
+    Raises:
+        ValueError: Bei nicht-ASCII-Zeichen im Namen.
+    """
+    if not name.isascii():
+        raise ValueError(f"Ordnername '{name}' enthält Nicht-ASCII-Zeichen (Umlaute o. ä.).")
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def markiere_verarbeitet(
     imap: imaplib.IMAP4_SSL, msg_num: bytes, konfig: ImapKonfig
 ) -> None:
@@ -357,11 +378,11 @@ def markiere_verarbeitet(
             unverändert im Postfach).
     """
     try:
-        imap.create(konfig.verarbeitet_ordner)
+        imap.create(quote_ordner(konfig.verarbeitet_ordner))
     except imaplib.IMAP4.error:
         pass  # Ordner existiert bereits - kein echter Fehler
  
-    status, _ = imap.copy(msg_num, konfig.verarbeitet_ordner)
+    status, _ = imap.copy(msg_num, quote_ordner(konfig.verarbeitet_ordner))
     if status != "OK":
         raise imaplib.IMAP4.error(
             f"Verschieben nach '{konfig.verarbeitet_ordner}' fehlgeschlagen"

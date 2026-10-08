@@ -67,6 +67,41 @@ def main(beispiel: Path) -> None:
         except ImportFehler as exc:
             assert "UTF-8" in str(exc)
 
+        # 5b. Kein Gast lesbar (z. B. unbekanntes Datumsformat): Fehler, kein import_log-Eintrag
+        vorher = conn.execute("SELECT COUNT(*) FROM import_log").fetchone()[0]
+        unlesbar = tmp / "unlesbar.csv"
+        unlesbar.write_text(
+            "RegNummer;Anreise;Abreise;Email\r\n1;Okt 8 2026;Okt 9 2026;a@b.de\r\n2;Okt 8 2026;Okt 9 2026;c@d.de\r\n",
+            encoding="utf-8")
+        try:
+            importiere_csv(conn, unlesbar)
+            raise AssertionError("ImportFehler erwartet")
+        except ImportFehler as exc:
+            assert "Alle 2 Zeilen" in str(exc) and "Okt 8 2026" in str(exc), exc
+        assert conn.execute("SELECT COUNT(*) FROM import_log").fetchone()[0] == vorher
+
+        # 5b2. Alter Fehleintrag (alle Zeilen fehlerhaft) blockiert eine Neuverarbeitung nicht
+        import hashlib
+        pruef = hashlib.sha256((tmp / "neu.csv").write_bytes(
+            b"RegNummer;Anreise;Abreise;Email\r\n401;08.10.26 00:00;09.10.26 00:00;g@h.de\r\n") and
+            (tmp / "neu.csv").read_bytes()).hexdigest()
+        with conn:
+            conn.execute("INSERT INTO import_log (dateiname, sha256, importiert_am, zeilen_gesamt, zeilen_fehler)"
+                         " VALUES ('alt.csv', ?, '2026-10-08 17:59:04', 1, 1)", (pruef,))
+        e = importiere_csv(conn, tmp / "neu.csv")
+        assert not e.bereits_importiert and e.neu == 1, e
+
+        # 5c. Weitere Datumsformate: mit Sekunden, 4-stelliges Jahr, ISO
+        formate = tmp / "formate.csv"
+        formate.write_text(
+            "RegNummer;Anreise;Abreise;Email\r\n"
+            "301;08.10.2026 00:00:00;09.10.2026 00:00:00;a@b.de\r\n"
+            "302;08.10.26 00:00:00;09.10.26 00:00:00;c@d.de\r\n"
+            "303;2026-10-08 00:00:00;2026-10-09;e@f.de\r\n", encoding="utf-8")
+        e = importiere_csv(conn, formate)
+        assert (e.neu, e.fehler) == (3, 0), e
+        assert conn.execute("SELECT anreise FROM arrivals WHERE reg_nummer='303'").fetchone()[0] == "2026-10-08"
+
         # 6. Löschfrist inkl. Mail-Log (CASCADE)
         aid = conn.execute("SELECT id FROM arrivals WHERE reg_nummer='12160'").fetchone()[0]
         with conn:
@@ -79,7 +114,7 @@ def main(beispiel: Path) -> None:
             assert "UNIQUE" in str(exc)
         assert loesche_alte_gaeste(conn, 30, heute=date(2026, 10, 20)) == 0
         n = loesche_alte_gaeste(conn, 30, heute=date(2026, 11, 20))  # Abreise < 21.10.
-        assert n == 7, n
+        assert n == 11, n
         assert conn.execute("SELECT COUNT(*) FROM mail_log").fetchone()[0] == 0
         conn.close()
     print("Alle Tests bestanden.")

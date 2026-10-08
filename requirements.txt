@@ -1,0 +1,2 @@
+# Nur nötig für OAuth2 (Microsoft 365). Mit klassischem IMAP-Login reicht die Standardbibliothek.
+msal
