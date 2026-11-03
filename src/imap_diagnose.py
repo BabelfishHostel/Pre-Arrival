@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 from imap_anhang_abruf import quote_ordner, verbinde
-from run_ingest import lade_env, lese_konfig
+from run_ingest import STANDARD_ENV, lade_env, lese_konfig
 
 
 def _zeige(titel: str, antwort) -> None:
@@ -34,7 +34,7 @@ def _zeige(titel: str, antwort) -> None:
 
 def main(argv) -> int:
     """Führt die Diagnose aus und gibt 0 bei Erfolg zurück."""
-    lade_env(Path(__file__).with_name(".env"))
+    lade_env(STANDARD_ENV)
     try:
         konfig = lese_konfig()
     except RuntimeError as exc:

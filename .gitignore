@@ -5,6 +5,12 @@
 *.csv
 downloads/
 
+# Laufzeitdaten (Datenbank, Vorschau, Lock) - nur der Ordner bleibt erhalten
+data/*
+!data/.gitkeep
+vorschau/
+*.lock
+
 # Zugangsdaten
 .env
 *.env

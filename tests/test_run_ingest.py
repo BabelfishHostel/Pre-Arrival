@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 """Test des Ingest-Jobs gegen einen simulierten IMAP-Server (kein Netzwerk)."""
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "src"))
+
 import imaplib
 import os
 import tempfile

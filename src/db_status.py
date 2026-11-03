@@ -17,13 +17,14 @@ import sys
 from pathlib import Path
 
 from db import verbinde
-from run_ingest import lade_env
+from run_ingest import STANDARD_ENV, lade_env, pfad_aus_env
 
 
 def main(argv) -> int:
     """Gibt den Datenbankstand aus; 0 bei Erfolg, 2 wenn kein Pfad bekannt ist."""
-    lade_env(Path(__file__).with_name(".env"))
+    lade_env(STANDARD_ENV)
     pfad = argv[0] if argv else os.environ.get("DB_PATH", "")
+    pfad = str(pfad_aus_env(pfad)) if pfad and not argv else pfad
     if not pfad or not Path(pfad).is_file():
         print(f"Datenbank nicht gefunden: '{pfad}'")
         return 2

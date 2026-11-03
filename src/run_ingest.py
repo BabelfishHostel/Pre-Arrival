@@ -14,7 +14,7 @@ Schlägt der Import einer Mail fehl, bleibt sie ungelesen im Postfach, der Lauf
 bricht ab und endet mit Exit-Code 1 (Cron/Monitoring kann darauf reagieren).
 Eine CSV nur mit Kopfzeile (Tag ohne Anreisen) ist kein Fehler.
 
-Konfiguration über Umgebungsvariablen oder eine ".env" neben diesem Skript
+Konfiguration über Umgebungsvariablen oder die Datei conf/.env
 (Vorlage: .env.example). Bereits gesetzte Umgebungsvariablen haben Vorrang.
 Anmeldung: IMAP_PASSWORD (klassisch) oder, wenn es fehlt, OAuth2 über die
 AZURE_*-Werte (Microsoft 365, benötigt `pip install msal`).
@@ -43,6 +43,16 @@ from imap_anhang_abruf import (
 log = logging.getLogger("pre_arrival")
 
 MAX_MAILS_PRO_LAUF = 20
+
+
+PROJEKT = Path(__file__).resolve().parent.parent   # Wurzel des Projekts (über src/)
+STANDARD_ENV = PROJEKT / "conf" / ".env"
+
+
+def pfad_aus_env(wert: str) -> Path:
+    """Wandelt einen Pfad aus der Konfiguration um; relative Pfade gelten ab der Projektwurzel."""
+    p = Path(wert)
+    return p if p.is_absolute() else PROJEKT / p
 
 
 def lade_env(pfad: Path) -> None:
@@ -118,7 +128,7 @@ def lese_konfig() -> dict:
         user=_pflicht("IMAP_USER"),
         absender_filter=_pflicht("ABSENDER_FILTER"),
         betreff_filter=_pflicht("BETREFF_FILTER"),
-        zielordner=Path(_pflicht("DOWNLOAD_DIR")),
+        zielordner=pfad_aus_env(_pflicht("DOWNLOAD_DIR")),
         port=int(os.environ.get("IMAP_PORT", "993")),
         verarbeitet_ordner=os.environ.get("VERARBEITET_ORDNER", "Verarbeitet"),
         dateiendung=".csv",
@@ -132,7 +142,7 @@ def lese_konfig() -> dict:
         "imap": imap,
         "passwort": passwort,
         "token_provider": token_provider,
-        "db_pfad": Path(_pflicht("DB_PATH")),
+        "db_pfad": pfad_aus_env(_pflicht("DB_PATH")),
         "aufbewahrung_tage": tage,
     }
 
@@ -193,13 +203,13 @@ def main(env_pfad: Optional[Path] = None) -> int:
     """Führt den Ingest-Job aus.
 
     Args:
-        env_pfad: Pfad der .env (Standard: neben diesem Skript).
+        env_pfad: Pfad der .env (Standard: conf/.env).
 
     Returns:
         0 bei Erfolg, 1 bei Fehlern, 2 bei fehlender Konfiguration.
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    lade_env(env_pfad or Path(__file__).with_name(".env"))
+    lade_env(env_pfad or STANDARD_ENV)
     try:
         konfig = lese_konfig()
     except RuntimeError as exc:

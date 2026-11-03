@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your arrival – Babelfish Hostel</title>
+<style type="text/css">
+  /* ============================================================
+     Babelfish Hostel – Pre-Arrival Email (ENGLISH)
+     Style taken 1:1 from BookingWidgetEmail_EN.html.
+     Olive #6b7a3a, dark olive #4a5429, light olive #eef0e6,
+     cream #f7f4ef, outer background #e9e5da, lines #e0ddd3,
+     charcoal #2c2c2c. Action colour #f0bc12 only for the payment
+     button. No CSS variables (Outlook). Key styles also inline.
+     Structure identical to PreArrival_DE.html – keep both in sync.
+     ============================================================ */
+  body, table, td, p, a, span, li {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #2c2c2c;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background-color: #e9e5da;
+  }
+  h1, h2, h3 {
+    font-family: 'Lora', Georgia, 'Times New Roman', serif;
+    color: #4a5429;
+    font-weight: 700;
+    margin: 0 0 10px 0;
+  }
+  h1 { font-size: 24px; }
+  h2 { font-size: 16px; font-weight: 400; color: #2c2c2c; }
+  h3 {
+    font-size: 17px;
+    color: #4a5429;
+    background-color: transparent;
+    padding: 0 0 6px 0;
+    margin: 32px 0 0 0;
+    border-bottom: 2px solid #6b7a3a;
+  }
+  strong, b { font-weight: 700; }
+  a { color: #6b7a3a; }
+
+  #box_main {
+    background-color: #f7f4ef;
+    width: 100%;
+    max-width: 800px;
+  }
+  #box_main .inner { padding: 28px 30px; }
+  .header-bar { background-color: #6b7a3a; padding: 18px 30px; }
+
+  .quickfacts {
+    border-left: 4px solid #6b7a3a;
+    background-color: #ffffff;
+    padding: 14px 18px;
+    margin: 14px 0 24px 0;
+  }
+  .quickfacts p { margin-bottom: 4px; }
+
+  ul.infolist { margin: 0 0 0 18px; padding: 0; }
+  ul.infolist li { margin-bottom: 6px; }
+
+  .footer {
+    background-color: #2c2c2c;
+    color: #f7f4ef;
+    padding: 22px 30px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .footer a { color: #f7f4ef; text-decoration: underline; }
+
+  @media only screen and (max-width: 600px) {
+    #box_main .inner, .header-bar, .footer { padding-left: 18px !important; padding-right: 18px !important; }
+    h1 { font-size: 20px !important; }
+  }
+</style>
+</head>
+<body>
+<!-- ============================================================
+     TEMPLATE Pre-Arrival Email Babelfish Hostel – ENGLISH VERSION
+     Draft date: 13 Oct 2026
+
+     Same placeholders, same block names and the same rules as in
+     PreArrival_DE.html – see the comment block there for the full
+     documentation. Differences in this file:
+
+       {{anrede}}   greeting line, e.g. "Hi Nico," / "Hi everyone,"
+       {{anreise}}  formatted English style, e.g. "Fri, 9 Oct 2026"
+       {{abreise}}  e.g. "Sun, 11 Oct 2026"
+       {{naechte}}  e.g. "2 nights"
+       {{gaeste}}   e.g. "1 guest" / "4 guests"
+       {{stornofrist}} end of the free cancellation period,
+                    e.g. "Wed, 7 Oct"
+       {{betrag}}   e.g. "EUR 52.80" (decimal point, not comma)
+       {{events}}   event HTML, English titles from column
+                    "Titel EN"; if empty, fall back to the German
+                    title ("Titel DE") – proper names such as
+                    "Jazzabend im Café Cairo" are fine untranslated.
+
+     Event row HTML for this file:
+
+       <p style="margin:0 0 10px 0;">
+         <strong>Fri, 9 Oct &middot; 8 pm</strong><br>
+         Event title<br>
+         <span style="font-size:12px; color:#6b7a3a;">Venue</span>
+       </p>
+
+     Fallback when there are no matches:
+
+       <p style="margin:0;">You can find out what's on in Würzburg
+       during your stay on
+       <a href="EVENTSEITE_URL">our events page</a>.</p>
+
+     Blocks: storno_flex_vor_frist, storno_flex_nach_frist,
+     storno_fix, zahlung – identical names to the German file so
+     the same script logic applies to both.
+     ============================================================ -->
+<table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#e9e5da">
+<tr><td align="center">
+<table id="box_main" border="0" cellpadding="0" cellspacing="0" style="background-color:#f7f4ef; width:100%; max-width:800px;">
+
+  <tr><td class="header-bar" style="background-color:#6b7a3a; padding:18px 30px;">
+    <img src="https://www.babelfish-hostel.de/images/logo/logo-quer-invers.png" alt="Babelfish Hostel" width="180" height="94" border="0" style="display:block;">
+  </td></tr>
+
+  <tr><td class="inner" style="padding:28px 30px;">
+
+    <h1 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:24px; color:#4a5429; margin:0 0 10px 0;">Your stay is coming up</h1>
+    <h2 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:16px; font-weight:400; color:#2c2c2c; margin:0 0 10px 0;">{{anrede}}</h2>
+    <p style="margin-top:12px;">you'll be with us at <strong>Babelfish Hostel</strong> soon. So you don't have to go looking for anything: here is your booking again, our check-in times and a few tips on what's happening in Würzburg.</p>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Your booking</h3>
+
+    <div class="quickfacts" style="border-left:4px solid #6b7a3a; background-color:#ffffff; padding:14px 18px; margin:14px 0 24px 0;">
+      <p style="margin-bottom:4px;"><strong>Booking number:</strong> {{buchungsnummer}}</p>
+      <p style="margin-bottom:4px;"><strong>Arrival:</strong> {{anreise}} &nbsp;&middot;&nbsp; <strong>Departure:</strong> {{abreise}}</p>
+      <p style="margin-bottom:4px;"><strong>Length of stay:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Guests:</strong> {{gaeste}}</p>
+    </div>
+
+    <!-- BLOCK:storno_flex_vor_frist:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Does everything look right?</strong>
+          If your plans have changed: you can still cancel free of charge until <strong>{{stornofrist}}</strong> &ndash; just reply to your booking confirmation by email. After that, and in case of no-show, we charge 90&nbsp;% of the booking price.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_flex_vor_frist:END -->
+
+    <!-- BLOCK:storno_flex_nach_frist:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Does everything look right?</strong>
+          The free cancellation period has ended. If you still can't make it, please let us know anyway &ndash; then we won't keep the bed waiting for you.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_flex_nach_frist:END -->
+
+    <!-- BLOCK:storno_fix:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Does everything look right?</strong>
+          Please check that the dates and the number of guests are correct. If you can't make it after all, please let us know.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_fix:END -->
+
+    <!-- BLOCK:zahlung:START -->
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Payment</h3>
+    <p style="margin-top:14px;">Your booking still requires an advance payment of <strong>{{betrag}}</strong>. Please pay by <strong>{{zahlungsfrist}}</strong> using this link:</p>
+
+    <table border="0" cellpadding="0" cellspacing="0" style="margin:18px 0 6px 0;">
+      <tr>
+        <td align="center" bgcolor="#f0bc12" style="background-color:#f0bc12; border:2px solid #2c2c2c; padding:12px 28px;">
+          <a href="{{paymentlink}}" style="font-family:Arial, Helvetica, sans-serif; font-size:15px; font-weight:700; color:#2c2c2c; text-decoration:none; display:inline-block;">Pay now</a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="font-size:12px; color:#6b7a3a; margin-top:6px;">You'll see which payment methods are available in the payment window.</p>
+    <p style="margin-top:14px;">If we don't receive your payment in time, we may withdraw from the contract after a reasonable grace period (section&nbsp;5 of our <a href="https://www.babelfish-hostel.de/en/booking-conditions/">General Terms and Conditions</a>).</p>
+    <!-- BLOCK:zahlung:END -->
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Check-in &amp; reception</h3>
+
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td width="49%" valign="top" style="background-color:#ffffff; border:1px solid #e0ddd3; border-top:3px solid #6b7a3a; padding:12px 16px;">
+          <span style="font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Check-in</span><br>
+          <span style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:20px; font-weight:700; color:#2c2c2c;">from 14:00</span>
+        </td>
+        <td width="2%">&nbsp;</td>
+        <td width="49%" valign="top" style="background-color:#ffffff; border:1px solid #e0ddd3; border-top:3px solid #6b7a3a; padding:12px 16px;">
+          <span style="font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Check-out</span><br>
+          <span style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:20px; font-weight:700; color:#2c2c2c;">until 11:00</span>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:24px 0 8px 0; font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Reception hours</p>
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border:1px solid #e0ddd3;">
+      <tr>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="38%">Period</th>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="18%">Days</th>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="44%">Hours</th>
+      </tr>
+      <tr>
+        <td rowspan="2" valign="top" style="padding:10px 12px; border-top:1px solid #e0ddd3; font-weight:700;">1 November &ndash; 31 March</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">Sun&ndash;Thu</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">8:00&ndash;14:00 and 18:00&ndash;22:00</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">Fri&ndash;Sat</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">8:00&ndash;22:00</td>
+      </tr>
+      <tr>
+        <td valign="top" style="padding:10px 12px; border-top:2px solid #6b7a3a; font-weight:700;">1 April &ndash; 31 October</td>
+        <td style="padding:10px 12px; border-top:2px solid #6b7a3a;">daily</td>
+        <td style="padding:10px 12px; border-top:2px solid #6b7a3a;">8:00&ndash;22:00</td>
+      </tr>
+    </table>
+
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Arriving outside reception hours?</strong>
+          Please let us know in advance, ideally by the day before you arrive &ndash; call +49&nbsp;931&nbsp;3040430 or email <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. We'll sort out how you get in.
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">What's on in Würzburg</h3>
+
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:14px 18px;">
+          {{events}}
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Good to know</h3>
+    <ul class="infolist" style="margin:14px 0 0 18px; padding:0;">
+      <li style="margin-bottom:6px;"><strong>Breakfast:</strong> Our breakfast buffet is served from 8:00 to 11:00.</li>
+      <li style="margin-bottom:6px;"><strong>Guest kitchen:</strong> Open around the clock.</li>
+      <li style="margin-bottom:6px;"><strong>Getting here &amp; parking:</strong> You'll find all the details in the
+        <a href="https://www.babelfish-hostel.de/en/#kontakt">contact section of our website</a>.</li>
+    </ul>
+
+    <p style="margin-top:24px;">If anything is unclear, just get in touch &ndash; we're happy to help.</p>
+    <p style="margin-top:14px;">Have a great trip and see you soon at Babelfish Hostel!<br><strong>Your Babelfish Team</strong></p>
+
+  </td></tr>
+
+  <tr><td class="footer" style="background-color:#2c2c2c; color:#f7f4ef; padding:22px 30px; font-size:12px; line-height:1.7;">
+    <strong>Babelfish GmbH</strong><br>
+    Haugerring 2 &middot; 97070 Würzburg<br>
+    Tel. +49 931 3040430 &middot; <a href="mailto:info@babelfish-hostel.de" style="color:#f7f4ef; text-decoration:underline;">info@babelfish-hostel.de</a><br>
+    Registered office: Würzburg &middot; Register court: Amtsgericht Würzburg &middot; HRB 12316<br>
+    Managing directors: Holger Siefert, Dieter Markert<br>
+    VAT ID: DE 294921989
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

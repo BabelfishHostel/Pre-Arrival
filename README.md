@@ -5,10 +5,21 @@ Verschickt automatisch Informationsmails an Gäste, die in den nächsten Tagen i
 ## Ablauf
 
 1. Das PMS (ASSD) schickt täglich per Cronjob eine CSV mit den Anreisen in 2 Tagen an ein Postfach.
-2. Der **Ingest-Job** holt die Mail ab (`imap_anhang_abruf.py`) und liest die CSV in die SQLite-Datenbank (`csv_import.py`).
-3. Der **Versand-Job** (noch offen) verschickt die Mails an fällige Gäste und protokolliert sie in `mail_log`.
+2. Der **Ingest-Job** (`src/run_ingest.py`) holt die Mail ab und liest die CSV in die SQLite-Datenbank.
+3. Der **Versand-Job** (`src/run_send.py`) verschickt die Mails an fällige Gäste und protokolliert sie in `mail_log`.
+4. Der **Tagesjob** (`src/run_daily.py`) führt beides nacheinander aus und ist für den Cronjob gedacht.
 
-## Dateien
+## Ordnerstruktur
+
+    src/      alle Programme (.py) und src/templates/ (PreArrival_DE.html, PreArrival_EN.html)
+    tests/    Tests
+    conf/     .env (echte Konfiguration, nicht im Git) und .env.example (Vorlage)
+    data/     Datenbank, Downloads, Vorschau, Lock-File (Inhalt nicht im Git)
+    docs/     Dokumentation
+
+Relative Pfade in der `.env` (z. B. `DB_PATH=data/pre_arrival.sqlite`) gelten ab der Projektwurzel, also dem Ordner über `src/`. Es ist unabhängig davon, aus welchem Ordner ein Skript gestartet wird.
+
+## Dateien in src/
 
 | Datei | Zweck |
 |---|---|
@@ -16,32 +27,47 @@ Verschickt automatisch Informationsmails an Gäste, die in den nächsten Tagen i
 | `csv_import.py` | CSV-Import, auch per Kommandozeile nutzbar |
 | `imap_anhang_abruf.py` | IMAP-Abruf des Anhangs |
 | `run_ingest.py` | Ingest-Job: Postfach abrufen, importieren, aufräumen |
-| `test_csv_import.py` | Tests für den Import |
-| `test_run_ingest.py` | Test des Ingest-Jobs gegen einen simulierten IMAP-Server |
-| `.env.example` | Vorlage der Konfiguration |
-| `requirements.txt` | Abhängigkeit `msal` für OAuth2 |
+| `run_daily.py` | Tagesjob für den Cronjob: Ingest, dann Vorschau oder Versand, mit Lock und Healthcheck |
+| `run_send.py` | Versand-Job (Trockenlauf, Testversand, live) |
+| `render.py` | Vorlage füllen: Blöcke, Anrede, Datums-/Betragsformate |
+| `events.py` | Veranstaltungen aus dem Google Sheet, mit Fallback |
+| `graph_mail.py` | Versand über Microsoft Graph `sendMail` (HTML + Text) |
+| `db_status.py`, `imap_diagnose.py` | Diagnose (Datenbankstand ohne Personendaten, Postfach-Prüfung) |
+
+`requirements.txt` (Abhängigkeit `msal` für OAuth2) liegt in der Projektwurzel.
 
 ## Einrichtung
 
 Python 3.9 oder neuer. Für das klassische IMAP-Login reicht die Standardbibliothek. Für Microsoft 365 (OAuth2) zusätzlich `pip install -r requirements.txt`.
 
-    cp .env.example .env      # ausfüllen
-    python run_ingest.py
+    cp conf/.env.example conf/.env      # ausfüllen
+    python src/run_ingest.py
 
 Der Ingest-Job holt alle ungelesenen CSV-Mails ab, importiert sie, verschiebt sie nach "Verarbeitet", löscht die heruntergeladene CSV und entfernt Gäste nach Ablauf der Aufbewahrungsfrist. Bei einem Fehler endet er mit Exit-Code 1 und lässt die Mail ungelesen. Eine CSV nur mit Kopfzeile gilt als Tag ohne Anreisen.
 
 Einen einzelnen Import ohne Postfach testen:
 
-    python csv_import.py /pfad/zur/pre_arrival.sqlite beispiel.csv
+    python src/csv_import.py data/pre_arrival.sqlite beispiel.csv
 
-Als Cronjob auf dem NAS, z. B. täglich um 06:00 Uhr:
+Als Cronjob auf dem NAS (ASSD schickt die CSV um 06:00 Uhr), stündlich von 06:15 bis 11:15, damit eine verspätete Mail noch am selben Tag verarbeitet wird:
 
-    0 6 * * * cd /pfad/zu/Pre-Arrival && python3 run_ingest.py >> ingest.log 2>&1
+    15 6-11 * * * cd /pfad/zu/Pre-Arrival && python3 src/run_daily.py >> data/daily.log 2>&1
+
+`run_daily.py` startet erst den Ingest, dann je nach `SEND_MODUS` entweder die Vorschau (Standard, es wird nichts gesendet; HTML-Dateien landen in `VORSCHAU_DIR` und werden nach `VORSCHAU_TAGE` Tagen gelöscht) oder den echten Versand (`live`). Beide sind idempotent, ein Lock-File verhindert parallele Läufe. Mit `HEALTHCHECK_URL` in der `.env` wird nach jedem erfolgreichen Lauf mit Import von heute ein Ping gesendet; bleibt er aus, schlägt Healthchecks.io Alarm.
+
+## Versand
+
+    python src/run_send.py --vorschau data/vorschau # Trockenlauf: HTML-Vorschauen, nichts wird gesendet
+    python src/run_send.py --test-an ich@example.de # alle fälligen Mails an eine Testadresse, kein Protokoll
+    python src/run_send.py --live                   # echter Versand, Protokoll in mail_log
+
+Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER`. Pro Gast wird die Mail nur einmal gesendet (`mail_log`). Fehler werden bis zu 3-mal wiederholt; ein beim Senden abgebrochener Eintrag wird nie automatisch wiederholt (kein Doppelversand). Der Zahlungsblock erscheint für EGB-Gäste mit offenem Paylink (`amou1`/`Paylink` leer = bezahlt); mit `ZAHLUNG_REGEL=flex` (Standard) zusätzlich nur bei Rate Flex, mit `paylink` unabhängig von der Rate. Die Zahlungsfrist ist optional (`ZAHLUNGSFRIST_TAGE`). Ohne Rate in der CSV gilt `RATE_STANDARD` (Fix). Sprache kommt aus der Spalte `Sprache` (D/E), nur ohne Spalte gilt die PLZ-Regel. Die Buchungsnummer kommt aus der Spalte `Buchungsnummer`.
 
 ## Tests
 
-    python test_csv_import.py beispiel.csv
-    python test_run_ingest.py
+    python tests/test_send.py
+    python tests/test_csv_import.py beispiel.csv
+    python tests/test_run_ingest.py
 
 ## Betrieb auf dem NAS
 

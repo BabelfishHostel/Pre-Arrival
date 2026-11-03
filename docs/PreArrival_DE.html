@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deine Anreise – Babelfish Hostel</title>
+<style type="text/css">
+  /* ============================================================
+     Babelfish Hostel – Pre-Arrival-Mail (Vorab-Mail)
+     Stil 1:1 aus BookingWidgetEmail_DE.html übernommen:
+     Olive #6b7a3a, Olive dunkel #4a5429, Hellolive #eef0e6,
+     Cream #f7f4ef, Außenhintergrund #e9e5da, Linien #e0ddd3,
+     Charcoal #2c2c2c.
+     NEU gegenüber der Bestätigung: Aktionsfarbe #f0bc12 für den
+     Zahlungs-Button. Das ist der einzige Button der Mail und laut
+     Design-Regel genau der erlaubte Fall.
+     KEINE CSS-Variablen (Outlook Desktop rendert var() nicht).
+     Wichtige Stile zusätzlich inline, weil einzelne Clients
+     (v.a. Outlook.com) den <style>-Block im Kopf verwerfen.
+     ============================================================ */
+  body, table, td, p, a, span, li {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #2c2c2c;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background-color: #e9e5da;
+  }
+  h1, h2, h3 {
+    font-family: 'Lora', Georgia, 'Times New Roman', serif;
+    color: #4a5429;
+    font-weight: 700;
+    margin: 0 0 10px 0;
+  }
+  h1 { font-size: 24px; }
+  h2 { font-size: 16px; font-weight: 400; color: #2c2c2c; }
+  h3 {
+    font-size: 17px;
+    color: #4a5429;
+    background-color: transparent;
+    padding: 0 0 6px 0;
+    margin: 32px 0 0 0;
+    border-bottom: 2px solid #6b7a3a;
+  }
+  strong, b { font-weight: 700; }
+  a { color: #6b7a3a; }
+
+  #box_main {
+    background-color: #f7f4ef;
+    width: 100%;
+    max-width: 800px;
+  }
+  #box_main .inner { padding: 28px 30px; }
+  .header-bar { background-color: #6b7a3a; padding: 18px 30px; }
+
+  .quickfacts {
+    border-left: 4px solid #6b7a3a;
+    background-color: #ffffff;
+    padding: 14px 18px;
+    margin: 14px 0 24px 0;
+  }
+  .quickfacts p { margin-bottom: 4px; }
+
+  ul.infolist { margin: 0 0 0 18px; padding: 0; }
+  ul.infolist li { margin-bottom: 6px; }
+
+  .footer {
+    background-color: #2c2c2c;
+    color: #f7f4ef;
+    padding: 22px 30px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .footer a { color: #f7f4ef; text-decoration: underline; }
+
+  @media only screen and (max-width: 600px) {
+    #box_main .inner, .header-bar, .footer { padding-left: 18px !important; padding-right: 18px !important; }
+    h1 { font-size: 20px !important; }
+  }
+</style>
+</head>
+<body>
+<!-- ============================================================
+     VORLAGE Pre-Arrival-Mail Babelfish Hostel – DEUTSCHE FASSUNG
+     Stand dieses Entwurfs: 13.10.2026
+
+     HINWEISE FUER DEN VERSAND VOM EIGENEN SERVER
+     ------------------------------------------------------------
+     1) PLATZHALTER (doppelte geschweifte Klammern), alle Pflicht
+        außer den als optional markierten:
+          {{anrede}}          komplette Anredezeile inkl. "Hallo",
+                              z.B. "Hallo Nico," oder "Hallo zusammen,"
+                              → Fallback-Regel siehe Punkt 3
+          {{buchungsnummer}}  Nummer, die der Gast in seiner
+                              Buchungsbestätigung sieht (NICHT
+                              zwingend die RegNummer aus der CSV –
+                              mit ASSD abgleichen!)
+          {{anreise}}         formatiert, z.B. "Fr, 9. Okt 2026"
+          {{abreise}}         formatiert, z.B. "So, 11. Okt 2026"
+          {{naechte}}         z.B. "2 Nächte"
+          {{gaeste}}          z.B. "1 Gast" / "4 Gaeste"
+          {{events}}          fertiges HTML, siehe Punkt 4
+          {{stornofrist}}     Ende der kostenfreien Stornofrist,
+                              z.B. "Mi, 7. Okt" – nur im Block
+                              storno_flex_vor_frist
+          {{zahlungsfrist}}   nur im Zahlungsblock, z.B. "7. Okt 2026"
+          {{betrag}}          nur im Zahlungsblock, z.B. "52,80 EUR"
+          {{paymentlink}}     nur im Zahlungsblock, absolute URL
+
+     2) BLOECKE: Jeder austauschbare Teil steht zwischen
+        den Markern  BLOCK:name:START  und  BLOCK:name:END
+        (jeweils als HTML-Kommentar, siehe weiter unten im Quelltext).
+        Das Skript behält pro Gast genau einen Storno-Block und
+        entfernt die übrigen, inkl. der Marker-Kommentare.
+
+          storno_flex_vor_frist   Rate Flex, Mail geht VOR Ablauf der
+                                  kostenfreien Stornofrist raus (T-7)
+          storno_flex_nach_frist  Rate Flex, Frist bereits abgelaufen
+                                  (T-2) – lockt NICHT zum Storno,
+                                  weil dann 90 % fällig sind
+          storno_fix              Rate Fix – kein Storno möglich,
+                                  nur Bitte um kurze Nachricht
+          zahlung                 NUR wenn Rate = Flex UND Kanal = EGB
+                                  (eigene Buchungsstrecke) UND noch
+                                  nicht bezahlt. Bei Fix und bei allen
+                                  Portalbuchungen (BHC) komplett
+                                  entfernen.
+
+        Dieser Entwurf enthält ALLE Blöcke sichtbar, damit sie in
+        der Vorschau geprüft werden können. In der versendeten
+        Mail steht immer nur einer davon.
+
+     3) ANREDE-FALLBACK (zwei von 18 CSV-Zeilen brauchen ihn):
+        Vorname leer ODER Vorname gleich Stadt ODER Vorname enthält
+        Ziffern  →  "Hallo zusammen,"
+        Sonst    →  "Hallo " + Vorname + ","
+        Vorname nur erstes Wort nehmen ("Ruth - Edith" → "Ruth").
+        VOLLSTÄNDIG GROSSGESCHRIEBENE Namen in Normalschreibweise
+        umwandeln.
+
+     4) EVENTS: {{events}} wird mit fertigem HTML ersetzt.
+        Quelle: öffentliches Google Sheet, Tab "Veranstaltungen",
+        als CSV-Ausgabe. Regeln:
+          - nur Status "freigegeben"
+          - Treffer, wenn Startdatum..Enddatum den Anreisetag oder
+            den Folgetag berührt (Enddatum leer = eintägig)
+          - Dubletten über Titel + Startdatum entfernen
+          - max. 3 Einträge, chronologisch; bei mehr Treffern haben
+            Konzert, Ausstellung und Sport Vorrang vor Messe und
+            "Uni & Kongress"
+          - fehlende Uhrzeit/Ort: Angabe weglassen, kein leeres
+            Trennzeichen stehen lassen
+          - Kurztext wird NICHT verwendet (Länge)
+          - keine Treffer ODER Sheet nicht erreichbar → Fallback-Satz,
+            siehe unten. Die Mail darf an einem Sheet-Problem nie
+            scheitern.
+        HTML pro Treffer (genau so, inline-Stile beibehalten):
+
+        <p style="margin:0 0 10px 0;">
+          <strong>Fr, 9. Okt &middot; 20:00 Uhr</strong><br>
+          Titel der Veranstaltung<br>
+          <span style="font-size:12px; color:#6b7a3a;">Ort</span>
+        </p>
+
+        Fallback-HTML bei null Treffern:
+
+        <p style="margin:0;">Was in Deinem Reisezeitraum in Würzburg
+        los ist, findest Du auf
+        <a href="EVENTSEITE_URL">unserer Veranstaltungsseite</a>.</p>
+
+     5) Logo liegt unter der angegebenen absoluten URL, nichts
+        hochladen. SVG bewusst nicht verwendet (Outlook).
+
+     6) OFFEN, bevor die Mail scharf geschaltet wird:
+        - Ratenfeld (Flex/Fix) fehlt noch in der CSV
+        - Sprachfeld (DE/EN) fehlt noch in der CSV
+        - Adresse der Veranstaltungsseite (Platzhalter EVENTSEITE_URL)
+        - Nummernformat Buchungsnummer mit ASSD abgleichen
+        - SPF/DKIM/DMARC für babelfish-hostel.de prüfen
+     ============================================================ -->
+<table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#e9e5da">
+<tr><td align="center">
+<table id="box_main" border="0" cellpadding="0" cellspacing="0" style="background-color:#f7f4ef; width:100%; max-width:800px;">
+
+  <tr><td class="header-bar" style="background-color:#6b7a3a; padding:18px 30px;">
+    <img src="https://www.babelfish-hostel.de/images/logo/logo-quer-invers.png" alt="Babelfish Hostel" width="180" height="94" border="0" style="display:block;">
+  </td></tr>
+
+  <tr><td class="inner" style="padding:28px 30px;">
+
+    <h1 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:24px; color:#4a5429; margin:0 0 10px 0;">Deine Anreise steht an</h1>
+    <h2 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:16px; font-weight:400; color:#2c2c2c; margin:0 0 10px 0;">{{anrede}}</h2>
+    <p style="margin-top:12px;">bald bist Du bei uns im <strong>Babelfish Hostel</strong>. Damit Du nichts suchen musst, hier noch einmal Deine Buchung, die Check-in-Zeiten und ein paar Tipps, was in Würzburg gerade los ist.</p>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Deine Buchung</h3>
+
+    <div class="quickfacts" style="border-left:4px solid #6b7a3a; background-color:#ffffff; padding:14px 18px; margin:14px 0 24px 0;">
+      <p style="margin-bottom:4px;"><strong>Buchungsnummer:</strong> {{buchungsnummer}}</p>
+      <p style="margin-bottom:4px;"><strong>Anreise:</strong> {{anreise}} &nbsp;&middot;&nbsp; <strong>Abreise:</strong> {{abreise}}</p>
+      <p style="margin-bottom:4px;"><strong>Dauer:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Gäste:</strong> {{gaeste}}</p>
+    </div>
+
+    <!-- BLOCK:storno_flex_vor_frist:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Stimmt alles?</strong>
+          Falls sich Deine Pläne geändert haben: Noch bis <strong>{{stornofrist}}</strong> kannst Du kostenlos stornieren &ndash; einfach per E-Mail als Antwort auf Deine Buchungsbestätigung. Danach und bei Nichtanreise berechnen wir 90&nbsp;% des Buchungspreises.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_flex_vor_frist:END -->
+
+    <!-- BLOCK:storno_flex_nach_frist:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Stimmt alles?</strong>
+          Der Zeitraum für die kostenfreie Stornierung ist abgelaufen. Falls Du trotzdem nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_flex_nach_frist:END -->
+
+    <!-- BLOCK:storno_fix:START -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Stimmt alles?</strong>
+          Schau kurz drüber, ob Datum und Personenzahl passen. Falls Du doch nicht kommen kannst, gib uns bitte kurz Bescheid.
+        </td>
+      </tr>
+    </table>
+    <!-- BLOCK:storno_fix:END -->
+
+    <!-- BLOCK:zahlung:START -->
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Zahlung</h3>
+    <p style="margin-top:14px;">Für Deine Buchung steht noch die Vorauszahlung von <strong>{{betrag}}</strong> aus. Bitte zahle bis <strong>{{zahlungsfrist}}</strong> über diesen Link:</p>
+
+    <!-- Button als Tabelle, nicht als reiner Link: Outlook stellt
+         gestylte <a>-Elemente sonst als blassen Text dar.
+         Aktionsfarbe #f0bc12 mit 2 px Charcoal-Rand. -->
+    <table border="0" cellpadding="0" cellspacing="0" style="margin:18px 0 6px 0;">
+      <tr>
+        <td align="center" bgcolor="#f0bc12" style="background-color:#f0bc12; border:2px solid #2c2c2c; padding:12px 28px;">
+          <a href="{{paymentlink}}" style="font-family:Arial, Helvetica, sans-serif; font-size:15px; font-weight:700; color:#2c2c2c; text-decoration:none; display:inline-block;">Jetzt bezahlen</a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="font-size:12px; color:#6b7a3a; margin-top:6px;">Welche Zahlungsarten zur Verfügung stehen, siehst Du im Zahlungsfenster.</p>
+    <p style="margin-top:14px;">Geht die Zahlung nicht rechtzeitig ein, können wir nach einer angemessenen Nachfrist vom Vertrag zurücktreten (&sect;&nbsp;5 unserer <a href="https://www.babelfish-hostel.de/buchungsbedingungen">AGB</a>).</p>
+    <!-- BLOCK:zahlung:END -->
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Check-in &amp; Rezeption</h3>
+
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td width="49%" valign="top" style="background-color:#ffffff; border:1px solid #e0ddd3; border-top:3px solid #6b7a3a; padding:12px 16px;">
+          <span style="font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Check-in</span><br>
+          <span style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:20px; font-weight:700; color:#2c2c2c;">ab 14:00 Uhr</span>
+        </td>
+        <td width="2%">&nbsp;</td>
+        <td width="49%" valign="top" style="background-color:#ffffff; border:1px solid #e0ddd3; border-top:3px solid #6b7a3a; padding:12px 16px;">
+          <span style="font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Check-out</span><br>
+          <span style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:20px; font-weight:700; color:#2c2c2c;">bis 11:00 Uhr</span>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:24px 0 8px 0; font-size:12px; text-transform:uppercase; font-weight:700; color:#6b7a3a; letter-spacing:0.5px;">Rezeptionszeiten</p>
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border:1px solid #e0ddd3;">
+      <tr>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="38%">Zeitraum</th>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="18%">Tage</th>
+        <th style="background-color:#eef0e6; color:#4a5429; text-align:left; font-size:12px; text-transform:uppercase; padding:8px 12px;" width="44%">Uhrzeiten</th>
+      </tr>
+      <tr>
+        <td rowspan="2" valign="top" style="padding:10px 12px; border-top:1px solid #e0ddd3; font-weight:700;">1. November &ndash; 31. März</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">So&ndash;Do</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">8:00&ndash;14:00 und 18:00&ndash;22:00 Uhr</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">Fr&ndash;Sa</td>
+        <td style="padding:10px 12px; border-top:1px solid #e0ddd3;">8:00&ndash;22:00 Uhr</td>
+      </tr>
+      <tr>
+        <td valign="top" style="padding:10px 12px; border-top:2px solid #6b7a3a; font-weight:700;">1. April &ndash; 31. Oktober</td>
+        <td style="padding:10px 12px; border-top:2px solid #6b7a3a;">täglich</td>
+        <td style="padding:10px 12px; border-top:2px solid #6b7a3a;">8:00&ndash;22:00 Uhr</td>
+      </tr>
+    </table>
+
+    <!-- Spätanreise. Die Frist "bis zum Vortag" ist ein Vorschlag
+         und noch nicht entschieden – hier ggf. anpassen. -->
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
+          <strong>Kommst Du außerhalb der Rezeptionszeiten an?</strong>
+          Sag uns bitte vorher Bescheid, am besten bis zum Tag vor Deiner Anreise &ndash; telefonisch unter +49&nbsp;931&nbsp;3040430 oder per E-Mail an <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. Dann finden wir einen Weg, wie Du reinkommst.
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Das ist in Würzburg los</h3>
+
+    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+      <tr>
+        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:14px 18px;">
+          {{events}}
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Gut zu wissen</h3>
+    <ul class="infolist" style="margin:14px 0 0 18px; padding:0;">
+      <li style="margin-bottom:6px;"><strong>Frühstück:</strong> Unser Frühstücksbuffet steht von 8:00 bis 11:00 Uhr bereit.</li>
+      <li style="margin-bottom:6px;"><strong>Gästeküche:</strong> Rund um die Uhr für Dich geöffnet.</li>
+      <li style="margin-bottom:6px;"><strong>Anreise &amp; Parken:</strong> Alle Infos findest Du im
+        <a href="https://www.babelfish-hostel.de/#kontakt">Kontaktbereich unserer Website</a>.</li>
+    </ul>
+
+    <p style="margin-top:24px;">Wenn Du noch Fragen hast, melde Dich einfach &ndash; wir sind für Dich da.</p>
+    <p style="margin-top:14px;">Gute Reise und bis bald im Babelfish Hostel!<br><strong>Dein Babelfish Team</strong></p>
+
+  </td></tr>
+
+  <tr><td class="footer" style="background-color:#2c2c2c; color:#f7f4ef; padding:22px 30px; font-size:12px; line-height:1.7;">
+    <strong>Babelfish GmbH</strong><br>
+    Haugerring 2 &middot; 97070 Würzburg<br>
+    Tel. +49 931 3040430 &middot; <a href="mailto:info@babelfish-hostel.de" style="color:#f7f4ef; text-decoration:underline;">info@babelfish-hostel.de</a><br>
+    Sitz der Gesellschaft: Würzburg &middot; Registergericht: Amtsgericht Würzburg &middot; HRB 12316<br>
+    Geschäftsführer: Holger Siefert, Dieter Markert<br>
+    USt-IdNr.: DE 294921989
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

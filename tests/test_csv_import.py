@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 """Tests für den CSV-Import. Aufruf: python test_csv_import.py <beispiel.csv>"""
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "src"))
+
 import sys
 import tempfile
 from datetime import date

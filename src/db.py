@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS import_log (
@@ -45,7 +45,12 @@ CREATE TABLE IF NOT EXISTS arrivals (
     buchungsdatum       TEXT,               -- ISO-Datum JJJJ-MM-TT
     anzahl_personen     INTEGER,
     kanal               TEXT,               -- z. B. BHC, EHC, leer = direkt
-    sprache             TEXT,               -- für spätere Mehrsprachigkeit
+    sprache             TEXT,               -- 'de' oder 'en'
+    rate                TEXT,               -- 'flex' oder 'fix' (leer = unbekannt)
+    buchungsnummer      TEXT,               -- Nummer, die der Gast sieht (z. B. 410200-20-12913)
+    betrag              REAL,               -- offener Zahlbetrag (CSV amou1); leer = bezahlt
+    gesamtbetrag        REAL,               -- Buchungssumme (CSV total)
+    paylink             TEXT,               -- persönliche Zahlungs-URL; leer = bezahlt. NICHT loggen.
     import_id           INTEGER REFERENCES import_log(id),
     erstmals_importiert TEXT    NOT NULL,
     zuletzt_gesehen     TEXT    NOT NULL
@@ -92,6 +97,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     """Legt alle Tabellen an, falls sie fehlen, und setzt die Schemaversion."""
     with conn:
         conn.executescript(SCHEMA)
+        spalten = {z["name"] for z in conn.execute("PRAGMA table_info(arrivals)")}
+        for name, typ in (("rate", "TEXT"), ("buchungsnummer", "TEXT"), ("betrag", "REAL"),
+                          ("gesamtbetrag", "REAL"), ("paylink", "TEXT")):
+            if name not in spalten:  # Migration von älteren Schemata
+                conn.execute(f"ALTER TABLE arrivals ADD COLUMN {name} {typ}")
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

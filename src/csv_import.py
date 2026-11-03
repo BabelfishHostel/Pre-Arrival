@@ -73,6 +73,49 @@ def _datum(text: str) -> Optional[str]:
     return None
 
 
+def _sprache(zeile: dict) -> str:
+    """Sprache aus Spalte 'Sprache' (D/E bzw. de/en), sonst Übergangsregel über die PLZ.
+
+    Übergangsregel, bis das PMS eine Sprachspalte liefert: fünfstellige PLZ
+    -> Deutsch, sonst Englisch. Die Adresse selbst wird nicht gespeichert.
+    """
+    roh = (zeile.get("Sprache") or "").strip().lower()
+    if roh in ("d", "de"):
+        return "de"
+    if roh in ("e", "en"):
+        return "en"
+    plz = (zeile.get("Postleitzahl") or "").strip()
+    return "de" if re.fullmatch(r"\d{5}", plz) else "en"
+
+
+def _betrag(text: Optional[str]) -> Optional[float]:
+    """'146.25' oder '146,25' -> 146.25; leer/ungültig/0 -> None."""
+    t = (text or "").strip().replace(" ", "")
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    try:
+        wert = float(t)
+    except ValueError:
+        return None
+    return wert if wert > 0 else None
+
+
+def _paylink(text: Optional[str]) -> Optional[str]:
+    """Nur http(s)-Links werden übernommen."""
+    t = (text or "").strip()
+    return t if re.match(r"^https?://\S+$", t) else None
+
+
+def _rate(text: Optional[str]) -> Optional[str]:
+    """Normalisiert die Rate auf 'flex' / 'fix', sonst None."""
+    t = (text or "").strip().lower()
+    if t.startswith("flex"):
+        return "flex"
+    if t.startswith("fix"):
+        return "fix"
+    return None
+
+
 def _zeile_lesen(zeile: dict) -> dict:
     """Prüft und normalisiert eine CSV-Zeile.
 
@@ -95,9 +138,13 @@ def _zeile_lesen(zeile: dict) -> dict:
         personen = int((zeile.get("AnzahlPersonen") or "").strip())
     except ValueError:
         personen = None
+    vorname = (zeile.get("Vorname") or "").strip() or None
+    stadt = (zeile.get("Stadt") or "").strip()
+    if vorname and (vorname.casefold() == stadt.casefold() or any(c.isdigit() for c in vorname)):
+        vorname = None  # Platzhalter statt Vorname -> Anrede-Fallback im Versand
     return {
         "reg_nummer": reg,
-        "vorname": (zeile.get("Vorname") or "").strip() or None,
+        "vorname": vorname,
         "nachname": (zeile.get("Nachname") or "").strip() or None,
         "email": email,
         "anreise": anreise,
@@ -105,20 +152,31 @@ def _zeile_lesen(zeile: dict) -> dict:
         "buchungsdatum": _datum(zeile.get("Buchungsdatum")),
         "anzahl_personen": personen,
         "kanal": (zeile.get("Kanal") or "").strip() or None,
+        "sprache": _sprache(zeile),
+        "rate": _rate(zeile.get("Rate")),
+        "buchungsnummer": (zeile.get("Buchungsnummer") or "").strip() or None,
+        "betrag": _betrag(zeile.get("amou1")),
+        "gesamtbetrag": _betrag(zeile.get("total")),
+        "paylink": _paylink(zeile.get("Paylink")),
     }
 
 
 UPSERT = """
 INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise,
-                      buchungsdatum, anzahl_personen, kanal, import_id,
+                      buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer, betrag,
+                      gesamtbetrag, paylink, import_id,
                       erstmals_importiert, zuletzt_gesehen)
 VALUES (:reg_nummer, :vorname, :nachname, :email, :anreise, :abreise,
-        :buchungsdatum, :anzahl_personen, :kanal, :import_id, :jetzt, :jetzt)
+        :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer, :betrag,
+        :gesamtbetrag, :paylink, :import_id, :jetzt, :jetzt)
 ON CONFLICT(reg_nummer) DO UPDATE SET
     vorname = excluded.vorname,           nachname = excluded.nachname,
     email = excluded.email,               anreise = excluded.anreise,
     abreise = excluded.abreise,           buchungsdatum = excluded.buchungsdatum,
     anzahl_personen = excluded.anzahl_personen, kanal = excluded.kanal,
+    sprache = excluded.sprache,           rate = excluded.rate,
+    buchungsnummer = excluded.buchungsnummer, betrag = excluded.betrag,
+    gesamtbetrag = excluded.gesamtbetrag, paylink = excluded.paylink,
     import_id = excluded.import_id,       zuletzt_gesehen = excluded.zuletzt_gesehen
 """
 
