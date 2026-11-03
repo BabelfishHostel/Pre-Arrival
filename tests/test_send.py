@@ -310,6 +310,32 @@ def test_neue_csv():
         conn.close()
 
 
+def test_env_kommentare():
+    import os
+    import run_ingest
+    w = run_ingest.wert_ohne_kommentar
+    assert w("paylink          # flex: Zahlungsblock nur bei Rate Flex") == "paylink"
+    assert w("vorschau         # vorschau (Standard)") == "vorschau"
+    assert w("  data/x.sqlite  ") == "data/x.sqlite" and w("") == "" and w("   # nur Kommentar") == ""
+    assert w('"mit # im Wert"  # Kommentar') == "mit # im Wert" and w("'a b'") == "a b"
+    assert w("geheim#ohneleerzeichen") == "geheim#ohneleerzeichen"      # '#' ohne Leerzeichen bleibt Teil des Werts
+    assert w("a~b.c-d_e") == "a~b.c-d_e"
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "t.env"
+        f.write_text("# Kommentar\r\nTESTKEY_A=paylink     # Erklaerung\r\nTESTKEY_B = \"x # y\"\r\nTESTKEY_C=\r\n", encoding="utf-8")
+        for k in ("TESTKEY_A", "TESTKEY_B", "TESTKEY_C"):
+            os.environ.pop(k, None)
+        run_ingest.lade_env(f)
+        assert (os.environ["TESTKEY_A"], os.environ["TESTKEY_B"], os.environ["TESTKEY_C"]) == ("paylink", "x # y", "")
+        # ZAHLUNG_REGEL mit Kommentar wirkt jetzt wie gewollt
+        os.environ["ZAHLUNG_REGEL"] = w("paylink          # flex: ...")
+        from run_send import lese_konfig
+        assert lese_konfig().zahlung_nur_flex is False
+        del os.environ["ZAHLUNG_REGEL"]
+        for k in ("TESTKEY_A", "TESTKEY_B", "TESTKEY_C"):
+            del os.environ[k]
+
+
 def test_pfade():
     import run_ingest
     assert run_ingest.STANDARD_ENV == run_ingest.PROJEKT / "conf" / ".env"

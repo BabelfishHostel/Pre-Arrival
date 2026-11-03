@@ -26,6 +26,7 @@ Aufruf:
 import imaplib
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Callable, Optional
@@ -55,6 +56,22 @@ def pfad_aus_env(wert: str) -> Path:
     return p if p.is_absolute() else PROJEKT / p
 
 
+def wert_ohne_kommentar(roh: str) -> str:
+    """Bereinigt den Wert einer .env-Zeile.
+
+    * In Anführungszeichen ("..." oder '...') gilt der Inhalt unverändert, auch mit ' #'.
+    * Sonst beginnt ein Kommentar bei Leerzeichen + '#' (oder wenn der Wert mit '#' beginnt).
+      Werte mit ' #' oder einem führenden '#' (z. B. Passwörter) deshalb in Anführungszeichen setzen.
+    """
+    roh = roh.strip()
+    if roh[:1] in ("'", '"'):
+        ende = roh.find(roh[0], 1)
+        return roh[1:ende] if ende != -1 else roh.strip("\"'")
+    if roh.startswith("#"):
+        return ""
+    return re.split(r"\s+#", roh, maxsplit=1)[0].strip()
+
+
 def lade_env(pfad: Path) -> None:
     """Liest 'KEY=VALUE'-Zeilen einer .env in os.environ (ohne zu überschreiben).
 
@@ -68,7 +85,7 @@ def lade_env(pfad: Path) -> None:
         if not zeile or zeile.startswith("#") or "=" not in zeile:
             continue
         schluessel, wert = zeile.split("=", 1)
-        os.environ.setdefault(schluessel.strip(), wert.strip().strip('"').strip("'"))
+        os.environ.setdefault(schluessel.strip(), wert_ohne_kommentar(wert))
 
 
 def _pflicht(name: str) -> str:
