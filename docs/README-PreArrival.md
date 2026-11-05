@@ -1,112 +1,135 @@
-# Pre-Arrival-Mails Babelfish Hostel – Stand 13.10.2026
+# Pre-Arrival-Mails Babelfish Hostel – Stand 05.11.2026
 
-## Dateien
+Dieses Dokument beschreibt die Mailvorlagen und die Regeln, nach denen der Versand-Job sie füllt. Technik, Einrichtung und Betrieb stehen in der `README.md` im Projektstamm.
 
-| Datei | Zweck |
+## Wo liegt was
+
+| Ort | Inhalt |
 |---|---|
-| `PreArrival_DE.html` | Vorlage Deutsch, mit allen Blöcken und Platzhaltern |
-| `PreArrival_EN.html` | Vorlage Englisch, identischer Aufbau |
-| `Vorschau_PreArrival_DE.html` / `.jpg` | Beispielmail mit Testdaten (Flex, T-3, mit Zahlung) |
-| `Vorschau_PreArrival_EN.html` / `.jpg` | dasselbe auf Englisch |
-| `build_beispiel.py` | Referenz-Implementierung der Block-Logik, erzeugt die Vorschau |
+| `src/templates/PreArrival_DE.html`, `PreArrival_EN.html` | **Maßgebliche** Vorlagen (Deutsch, Englisch), mit allen Blöcken und Platzhaltern |
+| `src/render.py` | füllt die Vorlage: Blöcke, Anrede, Datums- und Betragsformate, Text-Alternative |
+| `src/events.py` | Veranstaltungen aus dem Google Sheet |
+| `src/run_send.py` | wählt fällige Gäste, sendet oder erzeugt Vorschauen |
+| `docs/` | Referenzmaterial aus der Entwurfsphase (Kopien der Vorlagen, Beispiel-Bestätigung als Stilvorlage, Vorschaubilder). Die Kopien der Vorlagen hier sind **nicht** maßgeblich. |
 
-Das Logo fehlt in den Vorschaubildern nur deshalb, weil die Testumgebung die
-Website nicht erreicht. Beim Öffnen im Browser oder im Mailclient ist es da.
+Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet nichts, schreibt HTML-Dateien mit Gästedaten und Paylinks).
+
+## Datenquelle: die CSV von ASSD
+
+Die CSV „Anreise in 2 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
+
+| Spalte | Verwendung |
+|---|---|
+| `RegNummer` | interne Kennung (eindeutig), Fallback für die Buchungsnummer |
+| `Buchungsnummer` | die Nummer, die der Gast sieht (z. B. `410200-20-12913`) |
+| `Anreise`, `Abreise`, `AnzahlPersonen` | Datumsangaben, Nächte, Gäste |
+| `Vorname` | Anrede |
+| `Email` | Empfänger |
+| `Sprache` | `D` → Deutsch, `E` → Englisch |
+| `Kanal` | `EGB` (eigene Buchungsstrecke), `BHC` (Booking.com), `EHC` (Expedia); leer = noch nicht geklärt |
+| `amou1`, `Paylink` | offener Zahlbetrag und persönlicher Zahlungslink; **beide leer = bereits bezahlt** |
+| `total` | Buchungssumme (wird gespeichert, aktuell nicht in der Mail verwendet) |
+
+Adresse, PLZ und Stadt werden nicht gespeichert. Die Stadt dient beim Import nur dazu, einen als Vorname eingetragenen Ortsnamen zu erkennen.
 
 ## Betreffzeilen
 
 - DE: „Deine Anreise im Babelfish Hostel – alles Wichtige auf einen Blick"
 - EN: „Your arrival at Babelfish Hostel – everything at a glance"
 
-Bei der späteren Zahlungserinnerung bewusst anders formulieren, sonst wird sie
-für dieselbe Mail gehalten.
+Bei einer späteren Zahlungserinnerung bewusst anders formulieren, sonst wird sie für dieselbe Mail gehalten.
 
 ## Platzhalter
 
-`{{anrede}}` `{{buchungsnummer}}` `{{anreise}}` `{{abreise}}` `{{naechte}}`
-`{{gaeste}}` `{{events}}` `{{stornofrist}}` `{{betrag}}` `{{zahlungsfrist}}` `{{paymentlink}}`
+`{{anrede}}` `{{buchungsnummer}}` `{{anreise}}` `{{abreise}}` `{{naechte}}` `{{gaeste}}` `{{events}}` `{{stornofrist}}` `{{betrag}}` `{{zahlungsfrist}}` `{{paymentlink}}`
 
-`{{stornofrist}}` nur im Block `storno_flex_vor_frist`, die letzten drei nur im Zahlungsblock. Datum und Betrag werden vom Skript
-sprachrichtig formatiert (DE: `9. Okt 2026`, `528,00 EUR` – EN: `9 Oct 2026`,
-`EUR 528.00`).
+`{{stornofrist}}` steht nur im Block `storno_flex_vor_frist`, `{{betrag}}`, `{{zahlungsfrist}}` und `{{paymentlink}}` nur im Zahlungsblock. Formate: DE `Fr, 9. Okt 2026`, `528,00 EUR`, `2 Nächte`, `1 Gast` / `4 Gäste`; EN `Fri, 9 Oct 2026`, `EUR 528.00`, `2 nights`, `1 guest` / `4 guests`. Wochentage und Monate sind fest hinterlegt und unabhängig von der Systemsprache.
 
-## Blöcke
+## Blöcke und wann sie erscheinen
 
-Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und
-`<!-- BLOCK:name:END -->`. Das Skript behält pro Gast genau einen Storno-Block
-und entfernt die übrigen samt Markern.
+Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BLOCK:name:END -->`. Der Job behält pro Gast genau einen Storno-Block und entfernt die übrigen samt Markern. Nach dem Rendern bleiben weder Kommentare noch Platzhalter übrig, sonst bricht der Versand für diesen Gast mit einem Fehler ab.
+
+**Storno-Block** (abhängig von der Rate):
 
 | Block | Wann |
 |---|---|
-| `storno_flex_vor_frist` | Flex, Versand vor Ablauf der kostenfreien Stornofrist |
-| `storno_flex_nach_frist` | Flex, Frist bereits abgelaufen |
-| `storno_fix` | Fix |
-| `zahlung` | nur Flex **und** Kanal EGB **und** noch nicht bezahlt |
+| `storno_flex_vor_frist` | Rate Flex und heute liegt **vor** dem Ende der kostenfreien Stornofrist (Anreise minus `STORNO_TAGE`, Standard 2 Tage) |
+| `storno_flex_nach_frist` | Rate Flex, Frist erreicht oder abgelaufen |
+| `storno_fix` | Rate Fix **oder Rate unbekannt** (sichere Variante ohne Stornozusage) |
 
-Portalbuchungen (`BHC`) bekommen nie den Zahlungsblock. Die
-`@guest.booking.com`-Adressen sind Weiterleitungen von Booking.com; eine
-direkte Zahlungsaufforderung darüber verstößt gegen deren Regeln.
+Da die CSV bisher **keine Rate** liefert, gilt `RATE_STANDARD=fix`, und alle Gäste bekommen `storno_fix`. Die Unterscheidung Flex/Fix wirkt erst, wenn eine Rate-Spalte vorliegt. Mit der CSV „Anreise in 2 Tagen“ ist die Stornofrist beim Versand ohnehin meist schon erreicht, Flex-Gäste würden dann `storno_flex_nach_frist` bekommen.
 
-## Anrede-Fallback
+**Zahlungsblock `zahlung`** erscheint nur, wenn alle Punkte zutreffen:
 
-In der Beispiel-CSV sind zwei von 18 Zeilen betroffen.
+- Kanal ist `EGB`
+- Betrag (`amou1`) und `Paylink` sind gefüllt (= noch nicht bezahlt)
+- Rate Flex **oder** `ZAHLUNG_REGEL=paylink` (dann unabhängig von der Rate)
 
-- Vorname leer, gleich der Stadt oder mit Ziffern → `Hallo zusammen,` / `Hi everyone,`
-- sonst erstes Wort des Vornamens nehmen (`Ruth - Edith` → `Ruth`)
-- durchgehend großgeschriebene Namen in Normalschreibweise wandeln
+Portalbuchungen (`BHC`, `EHC`) bekommen nie einen Zahlungsblock. Die `@guest.booking.com`-Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
+
+## Anrede
+
+- Vorname leer, mit Ziffern oder gleich der Stadt → `Hallo zusammen,` / `Hi everyone,` (die Stadt prüft der Import, danach ist der Vorname leer)
+- sonst das erste Wort des Vornamens (`Ruth - Edith` → `Ruth`)
+- durchgehend großgeschriebene Namen werden in Normalschreibweise gewandelt
+- Namen werden für HTML maskiert
+
+## Sprache
+
+`Sprache` aus der CSV (`D`/`E`). Fehlt die Spalte ganz, gilt ersatzweise: fünfstellige PLZ = Deutsch, sonst Englisch. Fehlt beides, gilt `SPRACHE_STANDARD` (Standard `de`).
 
 ## Events
 
-Quelle: öffentliches Google Sheet, Tab „Veranstaltungen", als CSV-Ausgabe:
-`https://docs.google.com/spreadsheets/d/<ID>/gviz/tq?tqx=out:csv&sheet=Veranstaltungen`
-Der Tab wird über den Namen angesprochen, deshalb wird keine `gid` gebraucht
-und ein Verschieben der Tabs schadet nicht. Keine Zugangsdaten nötig, das
-Sheet steht auf „Jeder mit dem Link: Leser".
+Quelle: öffentliches Google Sheet, Tab „Veranstaltungen“, als CSV-Ausgabe über `https://docs.google.com/spreadsheets/d/<ID>/gviz/tq?tqx=out:csv&sheet=Veranstaltungen`. Der Tab wird über den Namen angesprochen, ein Verschieben schadet nicht. Konfiguration: `EVENTS_SHEET_ID`, `EVENTS_TAB`, `EVENTSEITE_URL`. Das Sheet wird je Lauf einmal geladen (Zeitlimit 8 Sekunden).
+
+Regeln (umgesetzt in `src/events.py`):
 
 - nur Status **freigegeben**
-- Treffer, wenn Startdatum–Enddatum den Anreisetag oder den Folgetag berührt
-  (Enddatum leer = eintägig)
-- Dubletten über Titel + Startdatum entfernen
-- maximal 3 Einträge, chronologisch; bei mehr Treffern haben Konzert,
-  Ausstellung und Sport Vorrang vor Messe und „Uni & Kongress"
-- fehlende Uhrzeit oder fehlender Ort: Angabe weglassen, kein leeres Trennzeichen
-- Kategorie Sport: Enddatum ignorieren (es ist das offene Spieltermin-Fenster
-  des Verbands, kein Zeitraum)
-- Ortsfilter nur als Ausschlussliste (Schweinfurt, Bamberg, …). NICHT positiv
-  auf „Würzburg" filtern: 19 der 42 freigegebenen Termine haben das Wort gar
-  nicht im Ortsfeld (Cairo, Immerhin, Laby, Posthalle), 8 haben keinen Ort
+- Treffer, wenn Start bis Ende den Anreisetag oder den Folgetag berührt (Ende leer = eintägig)
+- Dubletten über Titel und Startdatum entfernen
+- höchstens 3 Einträge, chronologisch; bei mehr Treffern haben Konzert, Ausstellung und Sport Vorrang vor Messe und „Uni & Kongress“
 - höchstens ein Termin je Kategorie und Tag, höchstens zwei pro Tag
+- fehlende Uhrzeit oder fehlender Ort: Angabe weglassen, kein leeres Trennzeichen
+- Kategorie Sport: Enddatum ignorieren (es ist das offene Spieltermin-Fenster des Verbands, kein Zeitraum)
+- Ortsfilter nur als Ausschlussliste (aktuell Schweinfurt, Bamberg, Nürnberg, Frankfurt, Aschaffenburg). Nicht positiv auf „Würzburg“ filtern: Viele Termine haben das Wort gar nicht im Ortsfeld oder keinen Ort.
 - Kurztext wird nicht verwendet
-- englische Titel aus Spalte „Titel EN"; wenn leer, deutscher Titel
-- keine Treffer oder Sheet nicht erreichbar → Fallback-Satz mit Link auf die
-  Veranstaltungsseite. Die Mail darf an einem Sheet-Problem nie scheitern.
+- englische Titel aus „Titel EN“, wenn leer der deutsche Titel
+- Uhrzeit: DE `20:00 Uhr`, EN `8 pm`
+- keine Treffer, Sheet nicht erreichbar oder nicht lesbar → Fallback-Satz mit Link auf die Veranstaltungsseite. Die Mail scheitert nie an einem Sheet-Problem.
 
-Getestet gegen den echten Sheet-Stand (131 Zeilen, 42 freigegeben): Von 68
-geprüften Anreisetagen bekommen 24 gar keinen Termin, 26 genau einen und nur 6
-die vollen drei. Der Engpass ist die Freigabe, nicht der Filter.
+Hinweis (Stand 13.10.): Getestet gegen den damaligen Sheet-Stand (131 Zeilen, 42 freigegeben) bekamen von 68 Anreisetagen 24 gar keinen Termin, 26 genau einen und nur 6 die vollen drei. Der Engpass ist die Freigabe, nicht der Filter.
 
-## Offen
+**Annahme zu den Spaltenköpfen:** Der Code erwartet `Status`, `Startdatum`, `Enddatum`, `Uhrzeit`, `Titel DE`, `Titel EN`, `Ort`, `Kategorie` (Groß-/Kleinschreibung egal, mehrere Schreibweisen werden erkannt). Sind die Köpfe im echten Sheet anders, greift der Fallback-Satz. Das ist noch nicht gegen das echte Sheet geprüft.
 
-1. **Ratenfeld (Flex/Fix)** fehlt in der CSV – ohne das keine Block-Auswahl
-2. **Sprachfeld (DE/EN)** fehlt in der CSV
-3. **Adresse der Veranstaltungsseite** für den Fallback-Satz (`EVENTSEITE_URL`)
-4. **Adresse des öffentlichen Sheets** und genaue Schreibweise des Tab-Namens
-5. **Buchungsnummer:** CSV zeigt `13400`, die Bestätigung `410200-20-12058` –
-   mit ASSD klären, welche Nummer der Gast sieht
-6. **Kanal:** 4 von 18 Zeilen haben kein Kanalkürzel – was bedeutet leer?
-7. **Spätanreise-Frist:** steht als Vorschlag „bis zum Tag vor der Anreise" drin
-8. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Zahlungsmails
-   über den eigenen Server laufen
-9. **Kurzfristbuchungen:** Wer weniger als 3 Tage vor Anreise bucht, taucht in
-   der T-3-Liste nicht mehr auf und bekommt gar keine Vorab-Mail. Regel nötig.
+## Versandzeitpunkt
+
+Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage). Da die CSV Anreisen in zwei Tagen enthält, geht die Mail normalerweise zwei Tage vor Anreise raus. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
 
 ## Technische Festlegungen
 
-- Stil 1:1 aus `BookingWidgetEmail_DE/EN.html`, keine neuen Farben außer der
-  Aktionsfarbe `#f0bc12` für den Zahlungs-Button
-- Button als Tabelle, nicht als Link – Outlook stellt gestylte Links sonst als
-  blassen Text dar
-- wichtige Stile zusätzlich inline, weil einzelne Clients den `<style>`-Block
-  im Kopf verwerfen
+- Stil 1:1 aus den Bestätigungsmails, keine neuen Farben außer der Aktionsfarbe `#f0bc12` für den Zahlungs-Button
+- Logo über dieselbe Adresse wie in der Bestätigungsmail: `https://hostels.assd.com/img/email/410200-logo-quer-invers.png` (180 × 94 px)
+- Button als Tabelle, nicht als Link – Outlook stellt gestylte Links sonst als blassen Text dar
+- wichtige Stile zusätzlich inline, weil einzelne Clients den `<style>`-Block im Kopf verwerfen
 - keine CSS-Variablen, kein Flexbox/Grid, kein SVG, keine externen Fonts
+- die Mail enthält auch eine Text-Alternative (`text/plain`), automatisch aus dem HTML erzeugt
 - kein Abmeldelink nötig: Mails zum bestehenden Vertrag, keine Werbung
+
+## Erledigt seit dem Entwurf
+
+- Sprachfeld: kommt jetzt aus der CSV (`Sprache`)
+- Buchungsnummer: eigene Spalte `Buchungsnummer`
+- Logo: Adresse korrigiert (Bestätigungsmail)
+- Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
+
+## Offen
+
+1. **Rate (Flex/Fix):** fehlt weiterhin in der CSV. Ohne sie bekommen alle Gäste den Fix-Text.
+2. **Events:** Sheet-Adresse, Tab-Name und Spaltenköpfe prüfen, `EVENTSEITE_URL` festlegen (aktuelles Thema).
+3. **Zahlungsfrist:** mit ASSD / intern klären; eventuell entfällt sie, und der Satz wird ohne Datum formuliert.
+4. **Kanal leer:** Was bedeutet ein leeres Kanalfeld (vermutlich Direktbuchung)? Betrifft die Zahlungslogik.
+5. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.
+6. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
+7. **Kurzfristbuchungen:** Wer weniger als zwei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
+8. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären auch Gäste fällig, die heute anreisen. Vorher festlegen, wie der Start aussieht.
+9. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
