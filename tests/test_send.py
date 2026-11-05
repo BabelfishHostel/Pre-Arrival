@@ -115,8 +115,8 @@ def test_events_abschlusslink():
     url = "https://www.babelfish-hostel.de/wuerzburg-tipps/"
     de = ev.events_html(ev1, ANREISE, "de", url)
     en = ev.events_html(ev1, ANREISE, "en", url)
-    assert de.rstrip().endswith("</p>") and f'Mehr im <a href="{url}">Eventbereich unserer Website</a>.' in de
-    assert f'More in the <a href="{url}">events section of our website</a>.' in en
+    assert de.rstrip().endswith("</p>") and f'Mehr Tipps findest Du im <a href="{url}">Eventbereich unserer Website</a>.' in de
+    assert f'You&rsquo;ll find more tips in the <a href="{url}">events section of our website</a>.' in en
     assert de.index("20:00 Uhr") < de.index("Eventbereich")                    # Link steht unter der Liste
     assert "Eventbereich" not in ev.events_html(ev1, ANREISE, "de", "")        # ohne URL kein Link
     assert "Eventbereich" not in ev.events_html([], ANREISE, "de", url)        # Fallback unverändert

@@ -95,7 +95,7 @@ Regeln (umgesetzt in `src/events.py`):
 - Kurztext wird nicht verwendet
 - englische Titel aus „Titel EN“, wenn leer der deutsche Titel
 - Uhrzeit: DE `20:00 Uhr`, EN `8 pm`
-- mit Terminen schließt der Bereich mit einem Link zur Veranstaltungsseite (`EVENTSEITE_URL`): „Mehr im Eventbereich unserer Website.“ bzw. „More in the events section of our website.“ Ohne gesetzte URL entfällt der Link.
+- mit Terminen schließt der Bereich mit einem Link zur Veranstaltungsseite (`EVENTSEITE_URL`): „Mehr Tipps findest Du im Eventbereich unserer Website.“ bzw. „You'll find more tips in the events section of our website.“ Ohne gesetzte URL entfällt der Link.
 - keine Treffer, Sheet nicht erreichbar oder nicht lesbar → Fallback-Satz mit Link auf die Veranstaltungsseite. Die Mail scheitert nie an einem Sheet-Problem.
 
 Hinweis (Stand 13.10.): Getestet gegen den damaligen Sheet-Stand (131 Zeilen, 42 freigegeben) bekamen von 68 Anreisetagen 24 gar keinen Termin, 26 genau einen und nur 6 die vollen drei. Der Engpass ist die Freigabe, nicht der Filter.

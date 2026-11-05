@@ -186,9 +186,9 @@ def events_html(auswahl: List[dict], anreise: date, sprache: str, eventseite_url
     if eventseite_url:
         url = html.escape(eventseite_url, quote=True)
         teile.append(
-            f'<p style="margin:4px 0 0 0;">Mehr im <a href="{url}">Eventbereich unserer Website</a>.</p>'
+            f'<p style="margin:4px 0 0 0;">Mehr Tipps findest Du im <a href="{url}">Eventbereich unserer Website</a>.</p>'
             if sprache == "de" else
-            f'<p style="margin:4px 0 0 0;">More in the <a href="{url}">events section of our website</a>.</p>'
+            f'<p style="margin:4px 0 0 0;">You&rsquo;ll find more tips in the <a href="{url}">events section of our website</a>.</p>'
         )
     return "\n".join(teile)
 
