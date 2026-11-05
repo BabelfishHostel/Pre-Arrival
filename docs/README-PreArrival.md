@@ -21,12 +21,12 @@ Die CSV „Anreise in 2 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendet
 | Spalte | Verwendung |
 |---|---|
 | `RegNummer` | interne Kennung (eindeutig), Fallback für die Buchungsnummer |
-| `Buchungsnummer` | die Nummer, die der Gast sieht (z. B. `410200-20-12913`) |
+| `Buchungsnummer` | die Nummer, die der Gast sieht (z. B. `410200-20-12913`). **Leer bei Buchungen vor Ort oder am Telefon**, dann zeigt die Mail ersatzweise die `RegNummer` (damit die Rezeption die Buchung bei Rückfragen schnell findet, auch wenn der Gast diese Nummer noch nicht kannte). |
 | `Anreise`, `Abreise`, `AnzahlPersonen` | Datumsangaben, Nächte, Gäste |
 | `Vorname` | Anrede |
 | `Email` | Empfänger |
 | `Sprache` | `D` → Deutsch, `E` → Englisch |
-| `Kanal` | `EGB` (eigene Buchungsstrecke), `BHC` (Booking.com), `EHC` (Expedia); leer = noch nicht geklärt |
+| `Kanal` | `EGB` (eigene Buchungsstrecke), `BHC` (Booking.com), `EHC` (Expedia); leer = Buchung vor Ort oder am Telefon (dann ist auch die `Buchungsnummer` leer) |
 | `amou1`, `Paylink` | offener Zahlbetrag und persönlicher Zahlungslink; **beide leer = bereits bezahlt** |
 | `total` | Buchungssumme (wird gespeichert, aktuell nicht in der Mail verwendet) |
 
@@ -65,7 +65,7 @@ Da die CSV bisher **keine Rate** liefert, gilt `RATE_STANDARD=fix`, und alle Gä
 - Betrag (`amou1`) und `Paylink` sind gefüllt (= noch nicht bezahlt)
 - Rate Flex **oder** `ZAHLUNG_REGEL=paylink` (dann unabhängig von der Rate)
 
-Portalbuchungen (`BHC`, `EHC`) bekommen nie einen Zahlungsblock. Die `@guest.booking.com`-Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
+Portalbuchungen (`BHC`, `EHC`) bekommen nie einen Zahlungsblock. Das Gleiche gilt derzeit für Buchungen vor Ort oder am Telefon (Kanal leer), weil der Block nur bei `EGB` erscheint. Ob diese Regel ausreicht, ist offen (siehe „Offen“). Die `@guest.booking.com`-Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
 
 ## Anrede
 
@@ -106,7 +106,7 @@ Zur Priorisierung: Bis auf „Uni & Kongress“ sind alle Kategorien gleichberec
 
 ## Versandzeitpunkt
 
-Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage). Da die CSV Anreisen in zwei Tagen enthält, geht die Mail normalerweise zwei Tage vor Anreise raus. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
+Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor Ort oder am Telefon (entschieden am 06.11.2026). Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage). Da die CSV Anreisen in zwei Tagen enthält, geht die Mail normalerweise zwei Tage vor Anreise raus. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
 
 ## Technische Festlegungen
 
@@ -124,16 +124,17 @@ Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage)
 - Buchungsnummer: eigene Spalte `Buchungsnummer`
 - Logo: Adresse korrigiert (Bestätigungsmail)
 - Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
+- Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
 - Events: Sheet angebunden (Spaltenköpfe des echten Sheets geprüft), `EVENTS_SHEET_ID` und `EVENTSEITE_URL` gesetzt, Theater gleichberechtigt, höchstens 4 Einträge, Abschlusslink „Mehr Tipps findest Du im Eventbereich unserer Website.“ (Vorschau auf dem NAS geprüft, 05.11.2026)
 
 ## Offen
 
 1. **Rate (Flex/Fix):** fehlt weiterhin in der CSV. Ohne sie bekommen alle Gäste den Fix-Text.
 2. **Zahlungsfrist:** mit ASSD / intern klären; eventuell entfällt sie, und der Satz wird ohne Datum formuliert.
-3. **Kanal leer:** Was bedeutet ein leeres Kanalfeld (vermutlich Direktbuchung)? Betrifft die Zahlungslogik.
-4. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.
-5. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-6. **Kurzfristbuchungen:** Wer weniger als zwei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
-7. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären auch Gäste fällig, die heute anreisen. Vorher festlegen, wie der Start aussieht.
-8. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
-9. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+3. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.
+4. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
+5. **Kurzfristbuchungen:** Wer weniger als zwei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
+6. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären auch Gäste fällig, die heute anreisen. Vorher festlegen, wie der Start aussieht.
+7. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
+8. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+9. **Regel für den Zahlungsblock anpassen:** Die jetzige Regel (Kanal `EGB`, offener Paylink, Rate Flex bzw. `ZAHLUNG_REGEL=paylink`) ist vermutlich zu eng und muss erweitert werden. Zu klären, welche Fälle zusätzlich einen Zahlungsblock bekommen sollen, z. B. Buchungen vor Ort oder am Telefon mit offener Zahlung. *(aufgenommen am 06.11.2026)*

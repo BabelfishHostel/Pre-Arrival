@@ -44,10 +44,10 @@ CREATE TABLE IF NOT EXISTS arrivals (
     abreise             TEXT    NOT NULL,   -- ISO-Datum JJJJ-MM-TT
     buchungsdatum       TEXT,               -- ISO-Datum JJJJ-MM-TT
     anzahl_personen     INTEGER,
-    kanal               TEXT,               -- z. B. BHC, EHC, leer = direkt
+    kanal               TEXT,               -- EGB, BHC, EHC; leer = Buchung vor Ort/Telefon
     sprache             TEXT,               -- 'de' oder 'en'
     rate                TEXT,               -- 'flex' oder 'fix' (leer = unbekannt)
-    buchungsnummer      TEXT,               -- Nummer, die der Gast sieht (z. B. 410200-20-12913)
+    buchungsnummer      TEXT,               -- Nummer, die der Gast sieht (z. B. 410200-20-12913); leer = vor Ort/Telefon
     betrag              REAL,               -- offener Zahlbetrag (CSV amou1); leer = bezahlt
     gesamtbetrag        REAL,               -- Buchungssumme (CSV total)
     paylink             TEXT,               -- persönliche Zahlungs-URL; leer = bezahlt. NICHT loggen.
