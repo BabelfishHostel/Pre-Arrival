@@ -87,7 +87,7 @@ Regeln (umgesetzt in `src/events.py`):
 - nur Status **freigegeben**
 - Treffer, wenn Start bis Ende den Anreisetag oder den Folgetag berührt (Ende leer = eintägig)
 - Dubletten über Titel und Startdatum entfernen
-- höchstens 3 Einträge, chronologisch; bei mehr Treffern haben Konzert, Ausstellung und Sport Vorrang vor Messe und „Uni & Kongress“
+- höchstens 4 Einträge, chronologisch; bei mehr Treffern haben alle Kategorien außer „Uni & Kongress“ und „Messe“ Vorrang (Konzert, Ausstellung, Sport, Theater, Sonstiges). Das Sheet hat keine eigene Kategorie „Theater“, Theater liegt unter „Sonstiges“ und ist damit gleichgestellt.
 - höchstens ein Termin je Kategorie und Tag, höchstens zwei pro Tag
 - fehlende Uhrzeit oder fehlender Ort: Angabe weglassen, kein leeres Trennzeichen
 - Kategorie Sport: Enddatum ignorieren (es ist das offene Spieltermin-Fenster des Verbands, kein Zeitraum)
@@ -95,13 +95,14 @@ Regeln (umgesetzt in `src/events.py`):
 - Kurztext wird nicht verwendet
 - englische Titel aus „Titel EN“, wenn leer der deutsche Titel
 - Uhrzeit: DE `20:00 Uhr`, EN `8 pm`
+- mit Terminen schließt der Bereich mit einem Link zur Veranstaltungsseite (`EVENTSEITE_URL`): „Mehr im Eventbereich unserer Website.“ bzw. „More in the events section of our website.“ Ohne gesetzte URL entfällt der Link.
 - keine Treffer, Sheet nicht erreichbar oder nicht lesbar → Fallback-Satz mit Link auf die Veranstaltungsseite. Die Mail scheitert nie an einem Sheet-Problem.
 
 Hinweis (Stand 13.10.): Getestet gegen den damaligen Sheet-Stand (131 Zeilen, 42 freigegeben) bekamen von 68 Anreisetagen 24 gar keinen Termin, 26 genau einen und nur 6 die vollen drei. Der Engpass ist die Freigabe, nicht der Filter.
 
 **Spalten des echten Sheets** (am 05.11.2026 geprüft): `Titel (DE)`, `Titel (EN)`, `Start-Datum`, `Start-Uhrzeit`, `End-Datum (optional)`, `Ort`, `Status`, `Kategorie`, `Kurztext/Tipp (DE)`, `Kurztext/Tipp (EN)`, `Quelle`, `Erfasst am`. Der Code erkennt die Köpfe unabhängig von Klammern, Bindestrichen und Groß-/Kleinschreibung. Datum im Format `TT.MM.JJJJ`, Uhrzeit `HH:MM` mit oder ohne „Uhr“. Status: `Freigegeben` / `Entwurf`. Kategorien: Sonstiges, Konzert, Sport, Uni & Kongress, Ausstellung (Stand 05.11.: 130 Zeilen, davon 34 freigegeben). Bei Köpfen, die der Code nicht erkennt, greift der Fallback-Satz.
 
-Zur Priorisierung: Konzert, Ausstellung und Sport haben Vorrang, danach folgen Sonstiges (z. B. Theater) und Uni & Kongress. Wenn Theater mehr Gewicht bekommen soll, ist das eine Änderung in `src/events.py` (`BEVORZUGT`).
+Zur Priorisierung: Bis auf „Uni & Kongress“ sind alle Kategorien gleichberechtigt, inklusive „Sonstiges“ (dort liegt u. a. Theater). Da „Sonstiges“ auch Kleinkram enthält (z. B. Spieleabend, Kickerturnier), kann es sich lohnen, im Sheet eine Kategorie „Theater“ anzulegen. Der Code behandelt sie bereits gleichrangig. Mit höchstens zwei Terminen pro Tag und einem je Kategorie und Tag ergeben Anreisetag und Folgetag zusammen höchstens vier Einträge.
 
 ## Versandzeitpunkt
 
@@ -127,7 +128,7 @@ Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage)
 ## Offen
 
 1. **Rate (Flex/Fix):** fehlt weiterhin in der CSV. Ohne sie bekommen alle Gäste den Fix-Text.
-2. **Events:** `EVENTS_SHEET_ID` und `EVENTSEITE_URL=https://www.babelfish-hostel.de/wuerzburg-tipps/` in der `.env` auf dem NAS setzen, dann Vorschau prüfen. Offen: Soll Theater („Sonstiges“) Vorrang bekommen?
+2. **Events:** `EVENTS_SHEET_ID` und `EVENTSEITE_URL=https://www.babelfish-hostel.de/wuerzburg-tipps/` in der `.env` auf dem NAS setzen, dann Vorschau prüfen. Theater ist gleichberechtigt (entschieden am 05.11.2026), höchstens 4 Einträge.
 3. **Zahlungsfrist:** mit ASSD / intern klären; eventuell entfällt sie, und der Satz wird ohne Datum formuliert.
 4. **Kanal leer:** Was bedeutet ein leeres Kanalfeld (vermutlich Direktbuchung)? Betrifft die Zahlungslogik.
 5. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.

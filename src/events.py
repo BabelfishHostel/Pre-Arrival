@@ -38,9 +38,11 @@ SPALTEN = {
     "ort": ["ort", "location", "veranstaltungsort"],
     "kategorie": ["kategorie"],
 }
-BEVORZUGT = ("konzert", "ausstellung", "sport")          # Vorrang vor Messe / Uni & Kongress
+# Gleichberechtigt: alles außer "Uni & Kongress" (und ggf. "Messe"), die bei mehr Treffern zurückstehen.
+# "Sonstiges" enthält u. a. Theater und ist deshalb gleichgestellt; "theater" gilt auch als eigene Kategorie.
+BEVORZUGT = ("konzert", "ausstellung", "sport", "theater", "sonstiges")
 AUSGESCHLOSSENE_ORTE = ("schweinfurt", "bamberg", "nürnberg", "frankfurt", "aschaffenburg")
-MAX_EINTRAEGE, MAX_PRO_TAG, MAX_PRO_KATEGORIE_TAG = 3, 2, 1
+MAX_EINTRAEGE, MAX_PRO_TAG, MAX_PRO_KATEGORIE_TAG = 4, 2, 1
 ABRUF_TIMEOUT = 8
 DATUMSFORMATE = ("%d.%m.%Y", "%d.%m.%y", "%Y-%m-%d", "%d.%m.")
 
@@ -162,7 +164,10 @@ def _zeit_text(zeit: str, sprache: str) -> str:
 
 
 def events_html(auswahl: List[dict], anreise: date, sprache: str, eventseite_url: str = "") -> str:
-    """Fertiges HTML für {{events}} (oder der Fallback-Satz ohne Treffer)."""
+    """Fertiges HTML für {{events}} (oder der Fallback-Satz ohne Treffer).
+
+    Mit Treffern folgt unter der Liste ein Link zur Veranstaltungsseite (nur wenn eine URL gesetzt ist).
+    """
     if not auswahl:
         return fallback_html(sprache, eventseite_url)
     teile = []
@@ -177,6 +182,13 @@ def events_html(auswahl: List[dict], anreise: date, sprache: str, eventseite_url
         teile.append(
             '<p style="margin:0 0 10px 0;">\n'
             f"  <strong>{kopf}</strong><br>\n  {html.escape(titel)}{ort}\n</p>"
+        )
+    if eventseite_url:
+        url = html.escape(eventseite_url, quote=True)
+        teile.append(
+            f'<p style="margin:4px 0 0 0;">Mehr im <a href="{url}">Eventbereich unserer Website</a>.</p>'
+            if sprache == "de" else
+            f'<p style="margin:4px 0 0 0;">More in the <a href="{url}">events section of our website</a>.</p>'
         )
     return "\n".join(teile)
 

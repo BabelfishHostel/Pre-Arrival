@@ -109,6 +109,46 @@ REAL_SHEET = (
 )
 
 
+def test_events_abschlusslink():
+    """Mit Terminen folgt ein Link zur Veranstaltungsseite; ohne URL nicht; ohne Termine bleibt der Fallback."""
+    ev1 = [{"start": ANREISE, "ende": ANREISE, "zeit": "20:00", "titel": "A", "titel_en": "", "ort": "", "kategorie": "Konzert"}]
+    url = "https://www.babelfish-hostel.de/wuerzburg-tipps/"
+    de = ev.events_html(ev1, ANREISE, "de", url)
+    en = ev.events_html(ev1, ANREISE, "en", url)
+    assert de.rstrip().endswith("</p>") and f'Mehr im <a href="{url}">Eventbereich unserer Website</a>.' in de
+    assert f'More in the <a href="{url}">events section of our website</a>.' in en
+    assert de.index("20:00 Uhr") < de.index("Eventbereich")                    # Link steht unter der Liste
+    assert "Eventbereich" not in ev.events_html(ev1, ANREISE, "de", "")        # ohne URL kein Link
+    assert "Eventbereich" not in ev.events_html([], ANREISE, "de", url)        # Fallback unverändert
+    assert "unserer Veranstaltungsseite" in ev.events_html([], ANREISE, "de", url)
+    assert 'a"b' not in ev.events_html(ev1, ANREISE, "de", 'https://x.de/?a"b')  # URL wird maskiert
+    q = ev.EventQuelle("ID", url, lader=lambda u: REAL_SHEET)
+    assert "Eventbereich unserer Website" in q.html(ANREISE, "de") and "events section" in q.html(ANREISE, "en")
+
+
+def test_events_vorrang_und_maximum():
+    """Sonstiges (Theater) ist gleichberechtigt; Uni & Kongress steht bei Überfüllung zurück; höchstens 4."""
+    def e(titel, kat, tag, zeit):
+        return {"start": tag, "ende": tag, "zeit": zeit, "titel": titel, "titel_en": "", "ort": "", "kategorie": kat}
+    t1, t2 = ANREISE, date(2026, 10, 10)
+    liste = [
+        e("Konzert1", "Konzert", t1, "20:00"), e("Theater1", "Sonstiges", t1, "19:00"), e("Kongress1", "Uni & Kongress", t1, "09:00"),
+        e("Sport2", "Sport", t2, "15:00"), e("Theater2", "Sonstiges", t2, "19:30"), e("Kongress2", "Uni & Kongress", t2, "10:00"),
+        e("Ausstellung2", "Ausstellung", t2, ""),
+    ]
+    titel = [x["titel"] for x in ev.waehle_events(liste, ANREISE)]
+    assert len(titel) == 4, titel
+    # Tag 1: Theater (19:00) und Konzert (20:00) kommen beide, Sonstiges wird nicht benachteiligt
+    assert "Theater1" in titel and "Konzert1" in titel
+    # Tag 2: vier Kandidaten, höchstens zwei pro Tag -> chronologisch entscheidet (Ausstellung ohne Zeit, Sport 15:00)
+    assert "Ausstellung2" in titel and "Sport2" in titel and "Theater2" not in titel
+    assert not any(x.startswith("Kongress") for x in titel)                          # Kongresse stehen zurück
+    assert sum(1 for x in titel if x.endswith("2")) <= 2                             # höchstens 2 pro Tag
+    # Reicht es nicht, rücken Kongresse nach (zwei Kategorien am Tag)
+    nur_kongress = [e("K1", "Uni & Kongress", t1, "09:00"), e("K2", "Uni & Kongress", t2, "10:00")]
+    assert len(ev.waehle_events(nur_kongress, ANREISE)) == 2
+
+
 def test_events_echte_kopfzeile():
     """Kopfzeile wie im echten Sheet (mit Klammern und Bindestrichen) wird erkannt."""
     liste = ev.lese_events(REAL_SHEET, 2026)
@@ -123,14 +163,14 @@ def test_events_echte_kopfzeile():
     hd = ev.events_html(wahl, ANREISE, "de")
     assert "Konzert Alpha" in hd and "20:00 Uhr" in hd and "Entwurf Gamma" not in hd
     q = ev.EventQuelle("ID", "https://www.babelfish-hostel.de/wuerzburg-tipps/", lader=lambda u: REAL_SHEET)
-    assert "Konzert Alpha" in q.html(ANREISE, "de") and "wuerzburg-tipps" not in q.html(ANREISE, "de")
+    assert "Konzert Alpha" in q.html(ANREISE, "de") and "wuerzburg-tipps" in q.html(ANREISE, "de")  # Abschlusslink
 
 
 def test_events():
     liste = ev.lese_events(SHEET, 2026)
     wahl = ev.waehle_events(liste, ANREISE)
     titel = [e["titel"] for e in wahl]
-    assert len(wahl) <= 3 and "Jazzabend" in titel and "Nicht frei" not in titel
+    assert len(wahl) <= 4 and "Jazzabend" in titel and "Nicht frei" not in titel
     assert titel.count("Jazzabend") == 1 and "Spiel in Schweinfurt" not in titel and "Heimspiel" not in titel
     assert "Messe X" not in titel or len(wahl) < 3
     h = ev.events_html(wahl, ANREISE, "en")
