@@ -24,12 +24,15 @@ from render import MONAT, WOCHENTAG
 
 log = logging.getLogger("events")
 
-# Mögliche Kopfzeilen je Feld (erste Übereinstimmung gewinnt, Groß-/Kleinschreibung egal)
+# Mögliche Kopfzeilen je Feld. Verglichen wird in normalisierter Form (Kleinbuchstaben, Sonderzeichen
+# wie Klammern und Bindestriche werden zu Leerzeichen); 'end datum' passt auch auf 'End-Datum (optional)'.
+# Die Köpfe des echten Sheets: Titel (DE), Titel (EN), Start-Datum, Start-Uhrzeit, End-Datum (optional),
+# Ort, Status, Kategorie, Kurztext/Tipp (DE), Kurztext/Tipp (EN), Quelle, Erfasst am.
 SPALTEN = {
     "status": ["status"],
-    "start": ["startdatum", "start", "datum"],
-    "ende": ["enddatum", "ende"],
-    "zeit": ["uhrzeit", "zeit", "beginn"],
+    "start": ["start datum", "startdatum", "datum", "start"],
+    "ende": ["end datum", "enddatum", "ende"],
+    "zeit": ["start uhrzeit", "uhrzeit", "zeit", "beginn"],
     "titel": ["titel de", "titel", "veranstaltung"],
     "titel_en": ["titel en"],
     "ort": ["ort", "location", "veranstaltungsort"],
@@ -63,9 +66,23 @@ def _datum(text: str, jahr: int) -> Optional[date]:
     return None
 
 
+def _norm(kopf: str) -> str:
+    """'End-Datum (optional)' -> 'end datum optional'."""
+    return re.sub(r"[^a-z0-9äöüß]+", " ", kopf.lower()).strip()
+
+
 def _spaltenmap(kopf: List[str]) -> Dict[str, Optional[int]]:
-    norm = [k.strip().lower() for k in kopf]
-    return {feld: next((norm.index(n) for n in namen if n in norm), None) for feld, namen in SPALTEN.items()}
+    """Ordnet jedem Feld die Spalte zu (exakt oder als Wortanfang, z. B. 'end datum' -> 'end datum optional')."""
+    norm = [_norm(k) for k in kopf]
+    ergebnis: Dict[str, Optional[int]] = {}
+    for feld, namen in SPALTEN.items():
+        ergebnis[feld] = None
+        for name in namen:
+            treffer = next((i for i, n in enumerate(norm) if n == name or n.startswith(name + " ")), None)
+            if treffer is not None:
+                ergebnis[feld] = treffer
+                break
+    return ergebnis
 
 
 def lese_events(csv_text: str, jahr: int) -> List[dict]:

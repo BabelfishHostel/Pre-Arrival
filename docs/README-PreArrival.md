@@ -99,7 +99,9 @@ Regeln (umgesetzt in `src/events.py`):
 
 Hinweis (Stand 13.10.): Getestet gegen den damaligen Sheet-Stand (131 Zeilen, 42 freigegeben) bekamen von 68 Anreisetagen 24 gar keinen Termin, 26 genau einen und nur 6 die vollen drei. Der Engpass ist die Freigabe, nicht der Filter.
 
-**Annahme zu den Spaltenköpfen:** Der Code erwartet `Status`, `Startdatum`, `Enddatum`, `Uhrzeit`, `Titel DE`, `Titel EN`, `Ort`, `Kategorie` (Groß-/Kleinschreibung egal, mehrere Schreibweisen werden erkannt). Sind die Köpfe im echten Sheet anders, greift der Fallback-Satz. Das ist noch nicht gegen das echte Sheet geprüft.
+**Spalten des echten Sheets** (am 05.11.2026 geprüft): `Titel (DE)`, `Titel (EN)`, `Start-Datum`, `Start-Uhrzeit`, `End-Datum (optional)`, `Ort`, `Status`, `Kategorie`, `Kurztext/Tipp (DE)`, `Kurztext/Tipp (EN)`, `Quelle`, `Erfasst am`. Der Code erkennt die Köpfe unabhängig von Klammern, Bindestrichen und Groß-/Kleinschreibung. Datum im Format `TT.MM.JJJJ`, Uhrzeit `HH:MM` mit oder ohne „Uhr“. Status: `Freigegeben` / `Entwurf`. Kategorien: Sonstiges, Konzert, Sport, Uni & Kongress, Ausstellung (Stand 05.11.: 130 Zeilen, davon 34 freigegeben). Bei Köpfen, die der Code nicht erkennt, greift der Fallback-Satz.
+
+Zur Priorisierung: Konzert, Ausstellung und Sport haben Vorrang, danach folgen Sonstiges (z. B. Theater) und Uni & Kongress. Wenn Theater mehr Gewicht bekommen soll, ist das eine Änderung in `src/events.py` (`BEVORZUGT`).
 
 ## Versandzeitpunkt
 
@@ -125,7 +127,7 @@ Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage)
 ## Offen
 
 1. **Rate (Flex/Fix):** fehlt weiterhin in der CSV. Ohne sie bekommen alle Gäste den Fix-Text.
-2. **Events:** Sheet-Adresse, Tab-Name und Spaltenköpfe prüfen, `EVENTSEITE_URL` festlegen (aktuelles Thema).
+2. **Events:** `EVENTS_SHEET_ID` und `EVENTSEITE_URL=https://www.babelfish-hostel.de/wuerzburg-tipps/` in der `.env` auf dem NAS setzen, dann Vorschau prüfen. Offen: Soll Theater („Sonstiges“) Vorrang bekommen?
 3. **Zahlungsfrist:** mit ASSD / intern klären; eventuell entfällt sie, und der Satz wird ohne Datum formuliert.
 4. **Kanal leer:** Was bedeutet ein leeres Kanalfeld (vermutlich Direktbuchung)? Betrifft die Zahlungslogik.
 5. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.

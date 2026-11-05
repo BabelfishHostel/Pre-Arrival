@@ -99,6 +99,33 @@ SHEET = (
 )
 
 
+REAL_SHEET = (
+    '"Titel (DE)","Titel (EN)","Start-Datum","Start-Uhrzeit","End-Datum (optional)","Ort","Status","Kategorie",'
+    '"Kurztext/Tipp (DE)","Kurztext/Tipp (EN)","Quelle","Erfasst am"\n'
+    '"Konzert Alpha","Concert Alpha","09.10.2026","20:00 Uhr","","Keller Z87","Freigegeben","Konzert","Text, mit Komma","","https://x.example","46300"\n'
+    '"Ausstellung Beta","","01.10.2026","","30.10.2026","Hubland Süd, Geb. Z6","Freigegeben","Ausstellung","","","","46301"\n'
+    '"Entwurf Gamma","","09.10.2026","19:30","","","Entwurf","Konzert","","","","46302"\n'
+    '"Theater Delta","Play Delta","10.10.2026","19:30","","","Freigegeben","Sonstiges","","","","46303"\n'
+)
+
+
+def test_events_echte_kopfzeile():
+    """Kopfzeile wie im echten Sheet (mit Klammern und Bindestrichen) wird erkannt."""
+    liste = ev.lese_events(REAL_SHEET, 2026)
+    assert [e["titel"] for e in liste] == ["Konzert Alpha", "Ausstellung Beta", "Theater Delta"]
+    k = liste[0]
+    assert k["titel_en"] == "Concert Alpha" and k["zeit"] == "20:00 Uhr" and k["ort"] == "Keller Z87"
+    assert liste[1]["ende"] == date(2026, 10, 30) and liste[1]["ort"] == "Hubland Süd, Geb. Z6"
+    wahl = ev.waehle_events(liste, ANREISE)
+    assert [e["titel"] for e in wahl] == ["Ausstellung Beta", "Konzert Alpha", "Theater Delta"] or len(wahl) == 3
+    h = ev.events_html(wahl, ANREISE, "en")
+    assert "Concert Alpha" in h and "8 pm" in h and "Play Delta" in h and "Ausstellung Beta" in h
+    hd = ev.events_html(wahl, ANREISE, "de")
+    assert "Konzert Alpha" in hd and "20:00 Uhr" in hd and "Entwurf Gamma" not in hd
+    q = ev.EventQuelle("ID", "https://www.babelfish-hostel.de/wuerzburg-tipps/", lader=lambda u: REAL_SHEET)
+    assert "Konzert Alpha" in q.html(ANREISE, "de") and "wuerzburg-tipps" not in q.html(ANREISE, "de")
+
+
 def test_events():
     liste = ev.lese_events(SHEET, 2026)
     wahl = ev.waehle_events(liste, ANREISE)
