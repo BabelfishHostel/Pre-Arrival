@@ -77,6 +77,9 @@ def test_bloecke():
             assert "BLOCK:" not in m["html"] and "{{" not in m["html"] and "HINWEISE" not in m["html"]
             assert "EVT" in m["html"] and "410200-20-12058" in m["html"] and m["text"].strip()
     en = render_mail(daten(sprache="en"))
+    for sprache in ("de", "en"):  # Logo wie in der Bestätigungsmail (funktionierende Adresse)
+        h = render_mail(daten(sprache=sprache))["html"]
+        assert 'src="https://hostels.assd.com/img/email/410200-logo-quer-invers.png"' in h and "babelfish-hostel.de/images" not in h
     assert en["betreff"].startswith("Your arrival") and "Fri, 9 Oct 2026" in en["html"] and "4 guests" in en["html"]
     assert render_mail(daten())["betreff"].startswith("Deine Anreise")
     assert "Hallo Nico," in render_mail(daten())["text"] or "Hallo Nico" in render_mail(daten())["text"]
