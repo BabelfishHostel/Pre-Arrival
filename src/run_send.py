@@ -49,7 +49,6 @@ class SendKonfig:
     sprache_standard: str = "de"
     rate_standard: str = "fix"              # sicher: keine Stornozusage, keine Zahlungsaufforderung
     storno_tage: int = 2
-    zahlung_nur_flex: bool = True           # False: Zahlungsblock bei jedem EGB-Gast mit offenem Paylink
     zahlungsfrist_tage: Optional[int] = None  # Frist = Anreise minus N Tage; None = keine Frist in der Mail
     vorschau_dir: Optional[Path] = None
 
@@ -77,6 +76,20 @@ def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungese
     return [z for z in zeilen if z["m_status"] in (None, "geplant", "fehler")]
 
 
+def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
+    """Hinweistext (ohne Personendaten) bei auffälligen Zahlungsdaten, sonst None.
+
+    * Paylink ohne Betrag: Der Zahlungsblock entfällt, die Mail geht ohne ihn raus.
+    * Paylink bei Portalbuchung (BHC/EHC oder Booking.com-Weiterleitung): Booking.com untersagt direkte
+      Zahlungsaufforderungen über die Weiterleitung. Die Mail wird NICHT unterdrückt, aber gemeldet.
+    """
+    if z["paylink"] and z["betrag"] is None:
+        return "Paylink ohne Betrag - Zahlungsblock entfällt"
+    if z["paylink"] and ((z["kanal"] or "").upper() in ("BHC", "EHC") or (z["email"] or "").lower().endswith("@guest.booking.com")):
+        return "Paylink bei Portalbuchung - bitte prüfen (Booking.com-Regeln)"
+    return None
+
+
 def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) -> MailDaten:
     sprache = z["sprache"] if z["sprache"] in ("de", "en") else k.sprache_standard
     anreise = date.fromisoformat(z["anreise"])
@@ -85,9 +98,8 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
         anreise=anreise, abreise=date.fromisoformat(z["abreise"]), personen=z["anzahl_personen"],
         sprache=sprache, rate=z["rate"] or k.rate_standard, kanal=z["kanal"], heute=heute,
         events_html=events.html(anreise, sprache), storno_tage=k.storno_tage,
-        betrag=z["betrag"], paymentlink=z["paylink"], bezahlt=not z["paylink"] or z["betrag"] is None,
+        betrag=z["betrag"], paymentlink=z["paylink"],
         zahlungsfrist=(anreise - timedelta(days=k.zahlungsfrist_tage)) if k.zahlungsfrist_tage is not None else None,
-        zahlung_nur_flex=k.zahlung_nur_flex,
     )
 
 
@@ -133,6 +145,10 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: ungültige E-Mail-Adresse")
             continue
+        hinweis = zahlung_hinweis(z)
+        if hinweis:
+            erg.details.append(f"{ref}: {hinweis}")
+            log.warning("%s: %s", ref, hinweis)
         try:
             d = mail_daten(z, k, events, heute)
             mail = render_mail(d)
@@ -185,7 +201,6 @@ def lese_konfig() -> SendKonfig:
         sprache_standard=e("SPRACHE_STANDARD", "de").lower(),
         rate_standard=e("RATE_STANDARD", "fix").lower(),
         storno_tage=int(e("STORNO_TAGE", "2")),
-        zahlung_nur_flex=e("ZAHLUNG_REGEL", "flex").lower() != "paylink",
         zahlungsfrist_tage=int(e("ZAHLUNGSFRIST_TAGE", "")) if e("ZAHLUNGSFRIST_TAGE", "").strip() else None,
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)

@@ -101,8 +101,6 @@ class MailDaten:
     betrag: Optional[float] = None
     zahlungsfrist: Optional[date] = None
     paymentlink: Optional[str] = None
-    bezahlt: bool = False
-    zahlung_nur_flex: bool = True   # False: Zahlungsblock bei jedem EGB-Gast mit offenem Paylink
 
 
 def storno_block(d: MailDaten) -> str:
@@ -114,14 +112,13 @@ def storno_block(d: MailDaten) -> str:
 
 
 def zahlung_aktiv(d: MailDaten) -> bool:
-    """Zahlungsblock: Kanal EGB, nicht bezahlt, Betrag und Link da (und je nach Regel nur Flex).
+    """Zahlungsblock: erscheint, wenn die CSV einen Paylink und einen Betrag enthält.
 
+    Die Entscheidung, ob eine Zahlung offen ist, trifft ASSD beim Erzeugen der CSV: Paylink und Betrag
+    sind nur bei offener Zahlung gefüllt. Kanal und Rate spielen keine Rolle.
     Die Zahlungsfrist ist optional; fehlt sie, entfällt der Fristsatz in der Mail.
     """
-    return (
-        (d.rate == "flex" or not d.zahlung_nur_flex) and (d.kanal or "").upper() == "EGB"
-        and not d.bezahlt and d.betrag is not None and bool(d.paymentlink)
-    )
+    return d.betrag is not None and bool(d.paymentlink)
 
 
 def _block_behalten(text: str, name: str) -> str:

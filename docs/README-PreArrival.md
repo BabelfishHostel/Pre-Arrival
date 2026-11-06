@@ -59,13 +59,9 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 
 Da die CSV bisher **keine Rate** liefert, gilt `RATE_STANDARD=fix`, und alle Gäste bekommen `storno_fix`. Die Unterscheidung Flex/Fix wirkt erst, wenn eine Rate-Spalte vorliegt. Mit der CSV „Anreise in 2 Tagen“ ist die Stornofrist beim Versand ohnehin meist schon erreicht, Flex-Gäste würden dann `storno_flex_nach_frist` bekommen.
 
-**Zahlungsblock `zahlung`** erscheint nur, wenn alle Punkte zutreffen:
+**Zahlungsblock `zahlung`** erscheint, wenn die CSV für den Gast sowohl Betrag (`amou1`) als auch `Paylink` enthält. Ob eine Zahlung offen ist, entscheidet ASSD beim Erzeugen der CSV (bezahlt = beide leer); Kanal und Rate spielen keine Rolle. Das gilt auch für Buchungen vor Ort oder am Telefon.
 
-- Kanal ist `EGB`
-- Betrag (`amou1`) und `Paylink` sind gefüllt (= noch nicht bezahlt)
-- Rate Flex **oder** `ZAHLUNG_REGEL=paylink` (dann unabhängig von der Rate)
-
-Portalbuchungen (`BHC`, `EHC`) bekommen nie einen Zahlungsblock. Das Gleiche gilt derzeit für Buchungen vor Ort oder am Telefon (Kanal leer), weil der Block nur bei `EGB` erscheint. Ob diese Regel ausreicht, ist offen (siehe „Offen“). Die `@guest.booking.com`-Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
+Warnung im Log (die Mail wird trotzdem gesendet): Paylink ohne Betrag (der Block entfällt) sowie Paylink bei Portalbuchungen (`BHC`, `EHC`, `@guest.booking.com`). Diese Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
 
 ## Anrede
 
@@ -124,6 +120,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Buchungsnummer: eigene Spalte `Buchungsnummer`
 - Logo: Adresse korrigiert (Bestätigungsmail)
 - Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
+- Zahlungsblock: erscheint, sobald Paylink und Betrag in der CSV stehen (Kanal/Rate egal); `ZAHLUNG_REGEL` entfällt, Warnung bei Portalbuchungen mit Paylink (06.11.2026)
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
 - Events: Sheet angebunden (Spaltenköpfe des echten Sheets geprüft), `EVENTS_SHEET_ID` und `EVENTSEITE_URL` gesetzt, Theater gleichberechtigt, höchstens 4 Einträge, Abschlusslink „Mehr Tipps findest Du im Eventbereich unserer Website.“ (Vorschau auf dem NAS geprüft, 05.11.2026)
 
@@ -137,4 +134,3 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 6. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären auch Gäste fällig, die heute anreisen. Vorher festlegen, wie der Start aussieht.
 7. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
 8. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
-9. **Regel für den Zahlungsblock anpassen:** Die jetzige Regel (Kanal `EGB`, offener Paylink, Rate Flex bzw. `ZAHLUNG_REGEL=paylink`) ist vermutlich zu eng und muss erweitert werden. Zu klären, welche Fälle zusätzlich einen Zahlungsblock bekommen sollen, z. B. Buchungen vor Ort oder am Telefon mit offener Zahlung. *(aufgenommen am 06.11.2026)*

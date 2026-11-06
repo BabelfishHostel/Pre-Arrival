@@ -59,14 +59,17 @@ def test_bloecke():
     assert storno_block(d) == "storno_flex_nach_frist"
     h = render_mail(d)["html"]
     assert "abgelaufen" in h and "kostenlos stornieren" not in h and "Jetzt bezahlen" in h
-    # Fix: kein Storno-Versprechen, keine Zahlung
+    # Fix: kein Storno-Versprechen; Zahlung hängt nur an Paylink + Betrag
     h = render_mail(daten(rate="fix"))["html"]
-    assert "Schau kurz drüber" in h and "Jetzt bezahlen" not in h and "kostenlos" not in h
-    # Portalbuchung BHC bekommt nie Zahlung
-    d = daten(kanal="BHC")
-    assert not zahlung_aktiv(d) and "Jetzt bezahlen" not in render_mail(d)["html"]
-    # EGB aber schon bezahlt / Zahlungsdaten fehlen
-    assert not zahlung_aktiv(daten(bezahlt=True)) and not zahlung_aktiv(daten(betrag=None))
+    assert "Schau kurz drüber" in h and "Jetzt bezahlen" in h and "kostenlos" not in h
+    # Kanal egal: Paylink + Betrag genügen (auch BHC, Kanal leer)
+    for kanal in ("BHC", None, ""):
+        d = daten(kanal=kanal)
+        assert zahlung_aktiv(d) and "Jetzt bezahlen" in render_mail(d)["html"]
+    # Kein Paylink oder kein Betrag (= bezahlt / unvollständig) -> kein Block
+    for kw in ({"paymentlink": None}, {"paymentlink": ""}, {"betrag": None}):
+        d = daten(**kw)
+        assert not zahlung_aktiv(d) and "Jetzt bezahlen" not in render_mail(d)["html"]
     # Unbekannte Rate -> wie Fix
     assert storno_block(daten(rate=None)) == "storno_fix"
     # Keine Marker/Platzhalter/Entwicklerkommentar im Ergebnis
@@ -329,17 +332,25 @@ def test_graph():
 
 
 def test_zahlung_regel():
-    # Regel 'paylink': auch Fix-Gast mit offenem Paylink bekommt den Zahlungsblock, ohne Frist
-    d = daten(rate="fix", zahlung_nur_flex=False, zahlungsfrist=None)
+    # Fix-Gast mit Paylink bekommt den Zahlungsblock, ohne Frist ohne Fristsatz
+    d = daten(rate="fix", zahlungsfrist=None)
     assert zahlung_aktiv(d)
     for sprache in ("de", "en"):
-        h = render_mail(daten(rate="fix", zahlung_nur_flex=False, zahlungsfrist=None, sprache=sprache))["html"]
+        h = render_mail(daten(rate="fix", zahlungsfrist=None, sprache=sprache))["html"]
         assert "{{" not in h and "528" in h and "pay.example" in h
         assert "bis <strong>" not in h and "by <strong>" not in h
-    # Regel 'flex' (Standard): Fix bekommt nichts
-    assert not zahlung_aktiv(daten(rate="fix"))
-    # Bezahlt (kein Paylink) -> kein Block
-    assert not zahlung_aktiv(daten(zahlung_nur_flex=False, paymentlink=None))
+    # Kein Paylink -> kein Block
+    assert not zahlung_aktiv(daten(paymentlink=None))
+
+
+def test_zahlung_hinweis():
+    from run_send import zahlung_hinweis
+    z = lambda **kw: {"paylink": "https://p", "betrag": 10.0, "kanal": "EGB", "email": "a@b.de", **kw}
+    assert zahlung_hinweis(z()) is None
+    assert zahlung_hinweis(z(paylink=None, kanal="BHC")) is None
+    assert "ohne Betrag" in zahlung_hinweis(z(betrag=None))
+    assert "Portalbuchung" in zahlung_hinweis(z(kanal="BHC"))
+    assert "Portalbuchung" in zahlung_hinweis(z(email="x@guest.booking.com"))
 
 
 NEUE_CSV = (
@@ -366,17 +377,14 @@ def test_neue_csv():
         assert a["betrag"] == 146.25 and a["gesamtbetrag"] == 146.25 and a["paylink"].endswith("AbC-_=")
         b = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='13729'").fetchone()
         assert b["sprache"] == "de" and b["betrag"] is None and b["paylink"] is None and b["gesamtbetrag"] == 18.0
-        # Versand: Mail nutzt die echte Buchungsnummer; Lautaro (EGB, offen) bekommt Zahlung nur bei Regel 'paylink'
+        # Versand: echte Buchungsnummer; Lautaro (Paylink + Betrag) bekommt Zahlung, Kerstin (bezahlt) nicht
         from run_send import SendKonfig, mail_daten
         q = ev.EventQuelle("")
-        for regel, erwartet in ((True, False), (False, True)):
-            k = SendKonfig(zahlung_nur_flex=regel)
-            d = mail_daten(a, k, q, date(2026, 10, 23))
-            assert d.buchungsnummer == "410200-20-12913" and d.sprache == "en"
-            assert zahlung_aktiv(d) == erwartet
-            assert "Jetzt bezahlen" not in render_mail(d)["html"] and ("Pay now" in render_mail(d)["html"]) == erwartet
-        d = mail_daten(b, SendKonfig(zahlung_nur_flex=False), q, date(2026, 10, 23))
-        assert d.bezahlt and not zahlung_aktiv(d)
+        d = mail_daten(a, SendKonfig(), q, date(2026, 10, 23))
+        assert d.buchungsnummer == "410200-20-12913" and d.sprache == "en"
+        assert zahlung_aktiv(d) and "Pay now" in render_mail(d)["html"]
+        d = mail_daten(b, SendKonfig(), q, date(2026, 10, 23))
+        assert not zahlung_aktiv(d) and "Pay now" not in render_mail(d)["html"]
         conn.close()
 
 
@@ -397,11 +405,6 @@ def test_env_kommentare():
             os.environ.pop(k, None)
         run_ingest.lade_env(f)
         assert (os.environ["TESTKEY_A"], os.environ["TESTKEY_B"], os.environ["TESTKEY_C"]) == ("paylink", "x # y", "")
-        # ZAHLUNG_REGEL mit Kommentar wirkt jetzt wie gewollt
-        os.environ["ZAHLUNG_REGEL"] = w("paylink          # flex: ...")
-        from run_send import lese_konfig
-        assert lese_konfig().zahlung_nur_flex is False
-        del os.environ["ZAHLUNG_REGEL"]
         for k in ("TESTKEY_A", "TESTKEY_B", "TESTKEY_C"):
             del os.environ[k]
 
