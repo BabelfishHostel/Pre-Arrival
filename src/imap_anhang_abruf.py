@@ -342,7 +342,7 @@ def quote_ordner(name: str) -> str:
     """Setzt einen IMAP-Ordnernamen in Anführungszeichen.
 
     imaplib quotet Argumente nicht selbst. Ohne Anführungszeichen zerlegt der
-    Server Namen mit Leerzeichen (z. B. 'Anreise in 2 Tagen') in mehrere
+    Server Namen mit Leerzeichen (z. B. 'Anreise in 3 Tagen') in mehrere
     Argumente und antwortet mit 'BAD Command Argument Error'.
 
     Args:

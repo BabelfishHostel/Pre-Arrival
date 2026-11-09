@@ -4,7 +4,7 @@ Verschickt automatisch Informationsmails an Gäste, die in den nächsten Tagen i
 
 ## Ablauf
 
-1. Das PMS (ASSD) schickt täglich per Cronjob eine CSV mit den Anreisen in 3 Tagen (bis zur Umstellung bei ASSD: 2 Tagen) an ein Postfach.
+1. Das PMS (ASSD) schickt täglich per Cronjob eine CSV mit den Anreisen in 3 Tagen an ein Postfach.
 2. Der **Ingest-Job** (`src/run_ingest.py`) holt die Mail ab und liest die CSV in die SQLite-Datenbank.
 3. Der **Versand-Job** (`src/run_send.py`) verschickt die Mails an fällige Gäste und protokolliert sie in `mail_log`.
 4. Der **Tagesjob** (`src/run_daily.py`) führt beides nacheinander aus und ist für den Cronjob gedacht.

@@ -16,7 +16,7 @@ Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet ni
 
 ## Datenquelle: die CSV von ASSD
 
-Die CSV „Anreise in 2 Tagen“ (künftig: 3 Tage, siehe „Offen“) kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
+Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
 
 | Spalte | Verwendung |
 |---|---|
@@ -108,7 +108,7 @@ Zur Priorisierung: Bis auf „Uni & Kongress“ sind alle Kategorien gleichberec
 
 ## Versandzeitpunkt
 
-Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor Ort oder am Telefon (entschieden am 06.11.2026). Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 3 Tage). Die Mail geht normalerweise drei Tage vor Anreise raus (CSV „Anreise in 3 Tagen“). Solange ASSD noch die CSV für zwei Tage liefert, geht sie zwei Tage vorher raus; der Frist-Satz passt sich an. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
+Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor Ort oder am Telefon (entschieden am 06.11.2026). Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 3 Tage). Die Mail geht normalerweise drei Tage vor Anreise raus (CSV „Anreise in 3 Tagen“). Der Frist-Satz in „Stimmt alles?“ richtet sich nach dem tatsächlichen Versandtag. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
 
 ## Technische Festlegungen
 
@@ -127,6 +127,8 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Logo: Adresse korrigiert (Bestätigungsmail)
 - Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
 - Zahlungs- und Storno-Texte (09.11.2026): Zahlungsbereich bei Paylink, Varianten Anzahlung/Rest/Gesamt nach Kanal EGB + Rate FLEX + Zahlstand; „Stimmt alles?“ mit Frist-Satz je nach Versandtag; Spalten `Rate`, `Anzahlung`, `Anzahlung_bis`, `amou3` in der CSV (Import geprüft); Buchungsnummer in der CSV korrigiert; Zahlungsfrist entfällt; Versand 3 Tage vor Anreise
+- Umstellung auf „Anreise in 3 Tagen“ (11/2026): ASSD-CSV, Mailordner, Abfrage und Dateinamen auf dem NAS angepasst; im Projekt war dafür keine Codeänderung nötig (Betreff-Filter „Anreise“ trifft weiterhin, Standard `SEND_TAGE_VORHER=3`)
+- Hinweise an ASSD zur CSV notiert und erledigt: letzte leere Spalte `Paylink` kann fehlen (25 statt 26 Felder, harmlos), `BHC` zusammen mit `FLEX` sollte nicht vorkommen
 - Cronjob auf dem NAS läuft, Vorschauen werden erstellt
 - Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
@@ -134,11 +136,9 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 ## Offen
 
-1. **CSV auf „Anreise in 3 Tagen“ umstellen:** ASSD liefert künftig die Anreisen in drei Tagen. Auf dem NAS dann `VERARBEITET_ORDNER`, ggf. den Mailordner und `SEND_TAGE_VORHER=3` (neuer Standard) prüfen. Bis dahin geht die Mail zwei Tage vorher raus.
-2. **Rate prüfen:** Sobald ein Flex-Gast (Kanal `EGB`) mit offener Zahlung in der CSV steht, die Vorschau ansehen (Anzahlungstext, bei Teilzahlung Resttext).
-3. **ASSD melden:** Zeilen enden manchmal ohne das letzte leere Feld `Paylink` (25 statt 26 Felder, harmlos), und `BHC` zusammen mit `FLEX` sollte nicht vorkommen.
-4. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-5. **Kurzfristbuchungen:** Wer weniger als drei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
-6. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
-7. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
-8. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+1. **Rate prüfen:** Sobald ein Flex-Gast (Kanal `EGB`) mit offener Zahlung in der CSV steht, die Vorschau ansehen (Anzahlungstext, bei Teilzahlung Resttext).
+2. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
+3. **Kurzfristbuchungen:** Wer weniger als drei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
+4. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
+5. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
+6. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).

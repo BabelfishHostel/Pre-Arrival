@@ -80,7 +80,7 @@ class FakeIMAP:
 
 def mail(nummer, csv_text):
     m = EmailMessage()
-    m["From"], m["Subject"] = "pms@example.com", "Anreise in 2 Tagen"
+    m["From"], m["Subject"] = "pms@example.com", "Anreise in 3 Tagen"
     m.set_content("siehe Anhang")
     m.add_attachment(csv_text.encode("utf-8"), maintype="text", subtype="csv", filename="anreise.csv")
     Server.nachrichten[nummer] = {"raw": m.as_bytes(), "ordner": "INBOX"}
@@ -142,10 +142,10 @@ def main():
         assert ordner(6) == "Verarbeitet" and zaehle("arrivals") == 3
 
         # 7b. Ordnername mit Leerzeichen (Exchange verlangt Anführungszeichen)
-        os.environ["VERARBEITET_ORDNER"] = "Anreise in 2 Tagen"
+        os.environ["VERARBEITET_ORDNER"] = "Anreise in 3 Tagen"
         mail(8, KOPF + ZEILE.format(n=202))
         assert run_ingest.main(tmp / "keine.env") == 0
-        assert ordner(8) == "Anreise in 2 Tagen" and zaehle("arrivals") == 4
+        assert ordner(8) == "Anreise in 3 Tagen" and zaehle("arrivals") == 4
         os.environ["VERARBEITET_ORDNER"] = "Fehler äöü"
         assert run_ingest.main(tmp / "keine.env") == 2   # Umlaute nicht unterstützt
         del os.environ["VERARBEITET_ORDNER"]
