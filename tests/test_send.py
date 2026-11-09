@@ -11,7 +11,7 @@ import email
 import json
 import tempfile
 import threading
-from datetime import date
+from datetime import date, timedelta
 from email import policy
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -20,7 +20,7 @@ import events as ev
 from db import init_db, verbinde
 from graph_mail import VersandFehler, baue_mime, sende_mime
 from render import (MailDaten, anrede, betrag_text, datum_lang, gaeste_text, naechte_text,
-                    render_mail, storno_block, zahlung_aktiv)
+                    render_mail, zahlung_aktiv, zahlung_variante, storno_variante)
 from run_send import SendKonfig, VORLAGE, verarbeite
 
 HEUTE = date(2026, 10, 7)
@@ -30,7 +30,7 @@ ANREISE = date(2026, 10, 9)
 def daten(**kw) -> MailDaten:
     basis = dict(vorname="Nico", buchungsnummer="410200-20-12058", anreise=ANREISE, abreise=date(2026, 10, 11),
                  personen=4, sprache="de", rate="flex", kanal="EGB", heute=HEUTE, events_html="<p>EVT</p>",
-                 betrag=528.0, zahlungsfrist=date(2026, 10, 7), paymentlink="https://pay.example/x?a=1&b=2")
+                 betrag=528.0, gesamtbetrag=528.0, paymentlink="https://pay.example/x?a=1&b=2")
     basis.update(kw)
     return MailDaten(**basis)
 
@@ -48,30 +48,50 @@ def test_format():
 
 
 def test_bloecke():
-    # Flex vor Fristende (heute < anreise-2)
-    d = daten(heute=date(2026, 10, 6))
-    assert storno_block(d) == "storno_flex_vor_frist"
-    h = render_mail(d)["html"]
-    assert "kostenlos stornieren" in h and "Mi, 7. Okt" in h and "abgelaufen" not in h and "Zahlung</h3>" in h
-    assert "528,00 EUR" in h and "7. Okt 2026" in h and "a=1&amp;b=2" in h
-    # Flex am Fristtag / danach (T-2)
-    d = daten()
-    assert storno_block(d) == "storno_flex_nach_frist"
-    h = render_mail(d)["html"]
-    assert "abgelaufen" in h and "kostenlos stornieren" not in h and "Jetzt bezahlen" in h
-    # Fix: kein Storno-Versprechen; Zahlung hängt nur an Paylink + Betrag
-    h = render_mail(daten(rate="fix"))["html"]
-    assert "Schau kurz drüber" in h and "Jetzt bezahlen" in h and "kostenlos" not in h
-    # Kanal egal: Paylink + Betrag genügen (auch BHC, Kanal leer)
-    for kanal in ("BHC", None, ""):
-        d = daten(kanal=kanal)
-        assert zahlung_aktiv(d) and "Jetzt bezahlen" in render_mail(d)["html"]
-    # Kein Paylink oder kein Betrag (= bezahlt / unvollständig) -> kein Block
-    for kw in ({"paymentlink": None}, {"paymentlink": ""}, {"betrag": None}):
+    # "Stimmt alles?": fester Teil bleibt, Storno-Satz richtet sich nach dem Versandtag (Frist = Anreise - 2 Tage)
+    fest = {"de": ("Schau kurz drüber, ob Datum und Personenzahl passen.", "Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid"),
+            "en": ("check that the dates and the number of guests are correct", "If you can't make it, please let us know")}
+    satz = {"de": {"morgen": "läuft morgen ab", "heute": "läuft heute ab", "datum": "läuft am <strong>Mi, 7. Okt</strong> ab"},
+            "en": {"morgen": "ends tomorrow", "heute": "ends today", "datum": "ends on <strong>Wed, 7 Oct</strong>"}}
+    for tage_vor, erwartet in ((4, "datum"), (3, "morgen"), (2, "heute"), (1, None), (0, None)):
+        d0 = daten(heute=ANREISE - timedelta(days=tage_vor))
+        assert storno_variante(d0) == erwartet, tage_vor
+        for sprache in ("de", "en"):
+            h = render_mail(daten(heute=d0.heute, sprache=sprache))["html"]
+            assert all(t in h for t in fest[sprache]), (tage_vor, sprache)
+            for name, t in satz[sprache].items():
+                assert (t in h) == (name == erwartet), (tage_vor, sprache, name)
+            assert "{{" not in h and "BLOCK:" not in h and "90 %" not in h and "90&nbsp;%" not in h
+    # Zahlungsvarianten: nur EGB + FLEX unterscheidet Anzahlung / Rest, alle anderen mit Paylink: gesamt
+    texte = {"anzahlung": ("Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.",
+                           "A deposit is due for your booking and has not been paid yet. Please use the following payment link, otherwise we cannot guarantee your booking."),
+             "rest": ("Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.",
+                      "You have already paid a deposit, so your booking is guaranteed. You can use the following payment link to pay the remaining balance."),
+             "gesamt": ("Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.",
+                        "Your booking is guaranteed. You can use the following payment link to pay for your booking in advance.")}
+    faelle = {
+        "anzahlung": [dict(), dict(betrag=700.0, gesamtbetrag=528.0)],          # nichts bezahlt (auch bei amou1 > total)
+        "rest": [dict(betrag=300.0, gesamtbetrag=528.0)],
+        "gesamt": [dict(kanal="BHC"), dict(kanal=None, betrag=None, gesamtbetrag=None), dict(kanal=""),
+                   dict(rate="fix"), dict(rate=None), dict(kanal="BHC", rate="flex"),
+                   dict(rate="fix", betrag=300.0, gesamtbetrag=528.0)],
+    }
+    for variante, liste in faelle.items():
+        for kw in liste:
+            assert zahlung_variante(daten(**kw)) == variante, (variante, kw)
+            for i, sprache in enumerate(("de", "en")):
+                h = render_mail(daten(sprache=sprache, **kw))["html"]
+                assert texte[variante][i] in h and "pay.example" in h and "a=1&amp;b=2" in h, (variante, kw, sprache)
+                for andere, t in texte.items():
+                    assert andere == variante or t[i] not in h
+                assert (("AGB" in h or "General Terms" in h) == (variante == "anzahlung")), (variante, kw, sprache)
+                assert "{{" not in h and "BLOCK:" not in h and "528" not in h   # Betrag steht nicht in der Mail
+    # Kein Paylink -> kein Zahlungsbereich; EGB+FLEX ohne Betrag/total ist nicht entscheidbar -> kein Bereich
+    for kw in ({"betrag": None}, {"gesamtbetrag": None}, {"paymentlink": None}, {"paymentlink": ""}):
         d = daten(**kw)
-        assert not zahlung_aktiv(d) and "Jetzt bezahlen" not in render_mail(d)["html"]
-    # Unbekannte Rate -> wie Fix
-    assert storno_block(daten(rate=None)) == "storno_fix"
+        assert not zahlung_aktiv(d) and "Jetzt bezahlen" not in render_mail(d)["html"], kw
+    # ohne Total/Betrag, aber nicht EGB+FLEX: Paylink genügt
+    assert zahlung_variante(daten(kanal="BHC", betrag=None, gesamtbetrag=None)) == "gesamt"
     # Keine Marker/Platzhalter/Entwicklerkommentar im Ergebnis
     for r in ("flex", "fix"):
         for s in ("de", "en"):
@@ -331,26 +351,56 @@ def test_graph():
         assert not exc.dauerhaft
 
 
-def test_zahlung_regel():
-    # Fix-Gast mit Paylink bekommt den Zahlungsblock, ohne Frist ohne Fristsatz
-    d = daten(rate="fix", zahlungsfrist=None)
-    assert zahlung_aktiv(d)
-    for sprache in ("de", "en"):
-        h = render_mail(daten(rate="fix", zahlungsfrist=None, sprache=sprache))["html"]
-        assert "{{" not in h and "528" in h and "pay.example" in h
-        assert "bis <strong>" not in h and "by <strong>" not in h
-    # Kein Paylink -> kein Block
-    assert not zahlung_aktiv(daten(paymentlink=None))
-
-
 def test_zahlung_hinweis():
     from run_send import zahlung_hinweis
-    z = lambda **kw: {"paylink": "https://p", "betrag": 10.0, "kanal": "EGB", "email": "a@b.de", **kw}
+    z = lambda **kw: {"paylink": "https://p", "betrag": 10.0, "gesamtbetrag": 10.0, "kanal": "EGB", "rate": "flex", **kw}
     assert zahlung_hinweis(z()) is None
-    assert zahlung_hinweis(z(paylink=None, kanal="BHC")) is None
-    assert "ohne Betrag" in zahlung_hinweis(z(betrag=None))
-    assert "Portalbuchung" in zahlung_hinweis(z(kanal="BHC"))
-    assert "Portalbuchung" in zahlung_hinweis(z(email="x@guest.booking.com"))
+    assert "fehlt" in zahlung_hinweis(z(betrag=None)) and "fehlt" in zahlung_hinweis(z(gesamtbetrag=None))
+    assert zahlung_hinweis(z(betrag=None, paylink=None)) is None            # bezahlt: keine Warnung
+    assert zahlung_hinweis(z(betrag=None, kanal="BHC")) is None             # Gesamt braucht keinen Betrag
+    assert zahlung_hinweis(z(gesamtbetrag=None, rate="fix")) is None
+    assert zahlung_hinweis(z(gesamtbetrag=None, rate=None), "flex") is not None  # RATE_STANDARD=flex
+
+
+NEUE_CSV_2026_11 = (
+    "RegNummer;Buchungsnummer;Ident;Anreise;Abreise;Buchungsdatum;AnzahlPersonen;Vorname;Nachname;Strasse;Postleitzahl;"
+    "Stadt;Email;Sprache;Kanal;Rate;Anzahlung;Anzahlung_bis;total;desc1;amou1;desc2;amou2;desc3;amou3;Paylink\r\n"
+    "     90001;6000000001;111;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-10-21;1;Anna;Test;Weg 5, 12345 Ort;;Ort;a@example.com;D;BHC;FLEX;26.90;0000-00-00;26.90;;26.90;;0.00;;0.00;https://pay.example/1\r\n"
+    "     90002;;222;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-11-03;1;Bea;Test;Str 8;93437;Ort;b@example.com;D;;;22.90;2026-11-08;22.90;;22.90;;0.00;;0.00;https://pay.example/2\r\n"
+    "     90003;410200-20-1;I01;2026-11-10 00:00:00;2026-11-12 00:00:00;2026-07-08;1;Carl;Test;Str 1;12055;Ort;c@example.com;D;EGB;FLEX;0.00;0000-00-00;173.80;;173.80;;0.00;;0.00;https://pay.example/3\r\n"
+    "     90004;410200-20-2;I02;2026-11-10 00:00:00;2026-11-12 00:00:00;2026-07-08;1;Dora;Test;Str 1;12055;Ort;d@example.com;D;EGB;FLEX;66.99;0000-00-00;173.80;;100.00;;0.00;;0.00;https://pay.example/4\r\n"
+    "     90005;410200-20-3;I03;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-11-03;1;Emil;Test;Str 2;F92;Ort;e@example.com;E;EGB;FLEX;66.99;0000-00-00;;;;;;;\r\n"
+    "     90006;5000000006;IBOO6;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-10-23;1;Fia;Test;Str 3;97816;Ort;f.1@guest.booking.com;D;BHC;OTA;0.00;0000-00-00;52.92;;52.92;;0.00;;0.00;https://pay.example/6\r\n"
+    "\r\n"
+)
+
+
+def test_csv_2026_11():
+    """CSV-Format vom 08.11.2026: neue Spalten, Zeile mit 25 statt 26 Feldern (letztes leeres Feld fehlt)."""
+    from csv_import import importiere_csv
+    from run_send import SendKonfig, mail_daten
+    with tempfile.TemporaryDirectory() as tmp:
+        pfad = Path(tmp) / "a.csv"
+        pfad.write_bytes(NEUE_CSV_2026_11.encode("utf-8"))
+        conn = verbinde(Path(tmp) / "n.sqlite")
+        init_db(conn)
+        e = importiere_csv(conn, pfad)
+        assert (e.gesamt, e.neu, e.fehler) == (6, 6, 0), e
+        q = ev.EventQuelle("")
+        k = SendKonfig()
+        heute = date(2026, 11, 7)    # Versand 3 Tage vor Anreise
+        erwartet = {"90001": "gesamt", "90002": "gesamt", "90003": "anzahlung", "90004": "rest", "90005": None, "90006": "gesamt"}
+        for reg, var in erwartet.items():
+            z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer=?", (reg,)).fetchone()
+            d = mail_daten(z, k, q, heute)
+            assert zahlung_variante(d) == var, (reg, zahlung_variante(d))
+            h = render_mail(d)["html"]
+            assert "läuft morgen ab" in h or "ends tomorrow" in h
+            assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var is not None)
+        z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90002'").fetchone()
+        assert mail_daten(z, k, q, heute).buchungsnummer == "90002"       # Fallback auf RegNummer
+        assert k.tage_vorher == 3 and k.storno_tage == 2
+        conn.close()
 
 
 NEUE_CSV = (

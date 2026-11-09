@@ -28,7 +28,6 @@ MONAT = {
     "de": ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"],
     "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
 }
-STORNO_BLOECKE = ("storno_flex_vor_frist", "storno_flex_nach_frist", "storno_fix")
 
 
 def datum_lang(d: date, sprache: str) -> str:
@@ -97,28 +96,45 @@ class MailDaten:
     kanal: Optional[str]
     heute: date
     events_html: str
-    storno_tage: int = 2    # kostenfreie Stornierung bis N Tage vor Anreise
-    betrag: Optional[float] = None
-    zahlungsfrist: Optional[date] = None
+    betrag: Optional[float] = None          # offener Betrag (CSV amou1)
+    gesamtbetrag: Optional[float] = None    # Gesamtpreis (CSV total)
     paymentlink: Optional[str] = None
+    storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
 
 
-def storno_block(d: MailDaten) -> str:
-    """Wählt den Storno-Block: Fix, Flex vor Fristende oder Flex nach Fristende."""
-    if d.rate == "flex":
-        frist = d.anreise - timedelta(days=d.storno_tage)
-        return "storno_flex_vor_frist" if d.heute < frist else "storno_flex_nach_frist"
-    return "storno_fix"  # Fix und unbekannte Rate: keine Stornozusage
+def zahlung_variante(d: MailDaten) -> Optional[str]:
+    """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest' oder 'gesamt'.
+
+    * Kein Paylink (bezahlt, das entscheidet ASSD beim Erzeugen der CSV): kein Bereich.
+    * Kanal EGB und Rate FLEX: Anzahlung nötig.
+        - amou1 >= total: noch nichts bezahlt -> 'anzahlung'
+        - amou1 < total: Anzahlung geleistet, Rest offen -> 'rest'
+        - Betrag oder total fehlen: nicht entscheidbar -> kein Bereich (Warnung im Log)
+    * Alle anderen Gäste mit Paylink (Portale, OTA, Fix, Buchung vor Ort): 'gesamt'.
+    """
+    if not d.paymentlink:
+        return None
+    if (d.kanal or "").upper() == "EGB" and d.rate == "flex":
+        if d.betrag is None or d.gesamtbetrag is None:
+            return None
+        return "anzahlung" if d.betrag >= d.gesamtbetrag - 0.005 else "rest"
+    return "gesamt"
 
 
 def zahlung_aktiv(d: MailDaten) -> bool:
-    """Zahlungsblock: erscheint, wenn die CSV einen Paylink und einen Betrag enthält.
+    return zahlung_variante(d) is not None
 
-    Die Entscheidung, ob eine Zahlung offen ist, trifft ASSD beim Erzeugen der CSV: Paylink und Betrag
-    sind nur bei offener Zahlung gefüllt. Kanal und Rate spielen keine Rolle.
-    Die Zahlungsfrist ist optional; fehlt sie, entfällt der Fristsatz in der Mail.
-    """
-    return d.betrag is not None and bool(d.paymentlink)
+
+def anzahlung_offen(d: MailDaten) -> bool:
+    return zahlung_variante(d) == "anzahlung"
+
+
+def storno_variante(d: MailDaten) -> Optional[str]:
+    """Satz zur kostenfreien Stornierung: 'morgen', 'heute', 'datum' (später) oder None (abgelaufen)."""
+    tage = (d.anreise - timedelta(days=d.storno_tage) - d.heute).days
+    if tage < 0:
+        return None
+    return {0: "heute", 1: "morgen"}.get(tage, "datum")
 
 
 def _block_behalten(text: str, name: str) -> str:
@@ -141,13 +157,19 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     # Entwickler-Kommentar (enthält Beispiel-Platzhalter) entfernen
     text = re.sub(r"<!-- =+.*?=+ -->\s*", "", vorlage, flags=re.S)
 
-    gewaehlt = storno_block(d)
-    for name in STORNO_BLOECKE:
-        text = _block_behalten(text, name) if name == gewaehlt else _block_entfernen(text, name)
-    if zahlung_aktiv(d):
+    variante = zahlung_variante(d)
+    if variante:
         text = _block_behalten(text, "zahlung")
+        for name in ("anzahlung", "rest", "gesamt"):
+            blk = f"zahlung_{name}"
+            text = _block_behalten(text, blk) if name == variante else _block_entfernen(text, blk)
+        text = _block_behalten(text, "zahlung_agb") if variante == "anzahlung" else _block_entfernen(text, "zahlung_agb")
     else:
         text = _block_entfernen(text, "zahlung")
+    storno = storno_variante(d)
+    for name in ("morgen", "heute", "datum"):
+        blk = f"storno_{name}"
+        text = _block_behalten(text, blk) if name == storno else _block_entfernen(text, blk)
 
     werte: Dict[str, str] = {
         "anrede": anrede(d.vorname, s),
@@ -159,14 +181,8 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         "events": d.events_html,
         "stornofrist": datum_kurz(d.anreise - timedelta(days=d.storno_tage), s),
     }
-    if zahlung_aktiv(d):
-        werte.update(
-            betrag=betrag_text(d.betrag, s),
-            zahlungsfrist=datum_ohne_wochentag(d.zahlungsfrist, s) if d.zahlungsfrist else "",
-            paymentlink=html.escape(d.paymentlink, quote=True),
-        )
-    if zahlung_aktiv(d) and d.zahlungsfrist is None:  # Satz ohne Frist
-        text = re.sub(r"\s+(?:bis|by)\s+<strong>\{\{zahlungsfrist\}\}</strong>", "", text)
+    if variante:
+        werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():
         text = text.replace("{{" + key + "}}", wert)
 

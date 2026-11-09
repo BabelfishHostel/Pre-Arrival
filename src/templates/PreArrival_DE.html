@@ -103,35 +103,35 @@
           {{naechte}}         z.B. "2 Nächte"
           {{gaeste}}          z.B. "1 Gast" / "4 Gaeste"
           {{events}}          fertiges HTML, siehe Punkt 4
-          {{stornofrist}}     Ende der kostenfreien Stornofrist,
-                              z.B. "Mi, 7. Okt" – nur im Block
-                              storno_flex_vor_frist
-          {{zahlungsfrist}}   nur im Zahlungsblock, z.B. "7. Okt 2026"
-          {{betrag}}          nur im Zahlungsblock, z.B. "52,80 EUR"
+          {{stornofrist}}     nur im Block storno_datum, z.B. "Mi, 7. Okt"
           {{paymentlink}}     nur im Zahlungsblock, absolute URL
 
      2) BLOECKE: Jeder austauschbare Teil steht zwischen
         den Markern  BLOCK:name:START  und  BLOCK:name:END
         (jeweils als HTML-Kommentar, siehe weiter unten im Quelltext).
-        Das Skript behält pro Gast genau einen Storno-Block und
-        entfernt die übrigen, inkl. der Marker-Kommentare.
+        Der Bereich "Stimmt alles?" ist für alle Gäste gleich; nur
+        der Satz zur kostenfreien Stornierung (Frist = Anreise minus
+        2 Tage) richtet sich nach dem Versandtag:
 
-          storno_flex_vor_frist   Rate Flex, Mail geht VOR Ablauf der
-                                  kostenfreien Stornofrist raus (T-7)
-          storno_flex_nach_frist  Rate Flex, Frist bereits abgelaufen
-                                  (T-2) – lockt NICHT zum Storno,
-                                  weil dann 90 % fällig sind
-          storno_fix              Rate Fix – kein Storno möglich,
-                                  nur Bitte um kurze Nachricht
-          zahlung                 NUR wenn Rate = Flex UND Kanal = EGB
-                                  (eigene Buchungsstrecke) UND noch
-                                  nicht bezahlt. Bei Fix und bei allen
-                                  Portalbuchungen (BHC) komplett
-                                  entfernen.
+          storno_morgen           Frist endet morgen
+          storno_heute            Frist endet heute
+          storno_datum            Frist endet später (mit Datum)
+          storno_vorbei           Frist schon abgelaufen: Satz entfällt
 
-        Dieser Entwurf enthält ALLE Blöcke sichtbar, damit sie in
-        der Vorschau geprüft werden können. In der versendeten
-        Mail steht immer nur einer davon.
+        Der Zahlungsbereich (Überschrift, Button) erscheint, wenn die
+        CSV einen Paylink enthält (leer = bezahlt, das entscheidet
+        ASSD). Der Einleitungssatz hängt von Kanal, Rate und Zahlstand
+        ab:
+
+          zahlung                 Gesamtbereich (nur mit Paylink)
+          zahlung_anzahlung       Kanal EGB + Rate FLEX + noch nichts
+                                  bezahlt (amou1 >= total)
+          zahlung_rest            Kanal EGB + Rate FLEX + Anzahlung
+                                  geleistet (amou1 < total)
+          zahlung_gesamt          alle anderen Gäste mit Paylink
+          zahlung_agb             AGB-Satz, nur bei zahlung_anzahlung
+
+        Nicht verwendete Blöcke werden samt Markern entfernt.
 
      3) ANREDE-FALLBACK (zwei von 18 CSV-Zeilen brauchen ihn):
         Vorname leer ODER Vorname gleich Stadt ODER Vorname enthält
@@ -203,42 +203,36 @@
       <p style="margin-bottom:4px;"><strong>Dauer:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Gäste:</strong> {{gaeste}}</p>
     </div>
 
-    <!-- BLOCK:storno_flex_vor_frist:START -->
     <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
       <tr>
         <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
           <strong>Stimmt alles?</strong>
-          Falls sich Deine Pläne geändert haben: Noch bis <strong>{{stornofrist}}</strong> kannst Du kostenlos stornieren &ndash; einfach per E-Mail als Antwort auf Deine Buchungsbestätigung. Danach und bei Nichtanreise berechnen wir 90&nbsp;% des Buchungspreises.
+          Schau kurz drüber, ob Datum und Personenzahl passen.
+          <!-- BLOCK:storno_morgen:START -->
+          Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.
+          <!-- BLOCK:storno_morgen:END -->
+          <!-- BLOCK:storno_heute:START -->
+          Der Zeitraum für die kostenfreie Stornierung läuft heute ab.
+          <!-- BLOCK:storno_heute:END -->
+          <!-- BLOCK:storno_datum:START -->
+          Der Zeitraum für die kostenfreie Stornierung läuft am <strong>{{stornofrist}}</strong> ab.
+          <!-- BLOCK:storno_datum:END -->
+          Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.
         </td>
       </tr>
     </table>
-    <!-- BLOCK:storno_flex_vor_frist:END -->
-
-    <!-- BLOCK:storno_flex_nach_frist:START -->
-    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
-      <tr>
-        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
-          <strong>Stimmt alles?</strong>
-          Der Zeitraum für die kostenfreie Stornierung ist abgelaufen. Falls Du trotzdem nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.
-        </td>
-      </tr>
-    </table>
-    <!-- BLOCK:storno_flex_nach_frist:END -->
-
-    <!-- BLOCK:storno_fix:START -->
-    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
-      <tr>
-        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
-          <strong>Stimmt alles?</strong>
-          Schau kurz drüber, ob Datum und Personenzahl passen. Falls Du doch nicht kommen kannst, gib uns bitte kurz Bescheid.
-        </td>
-      </tr>
-    </table>
-    <!-- BLOCK:storno_fix:END -->
 
     <!-- BLOCK:zahlung:START -->
     <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Zahlung</h3>
-    <p style="margin-top:14px;">Für Deine Buchung steht noch die Vorauszahlung von <strong>{{betrag}}</strong> aus. Bitte zahle bis <strong>{{zahlungsfrist}}</strong> über diesen Link:</p>
+    <!-- BLOCK:zahlung_anzahlung:START -->
+    <p style="margin-top:14px;">Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.</p>
+    <!-- BLOCK:zahlung_anzahlung:END -->
+    <!-- BLOCK:zahlung_rest:START -->
+    <p style="margin-top:14px;">Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.</p>
+    <!-- BLOCK:zahlung_rest:END -->
+    <!-- BLOCK:zahlung_gesamt:START -->
+    <p style="margin-top:14px;">Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.</p>
+    <!-- BLOCK:zahlung_gesamt:END -->
 
     <!-- Button als Tabelle, nicht als reiner Link: Outlook stellt
          gestylte <a>-Elemente sonst als blassen Text dar.
@@ -252,7 +246,9 @@
     </table>
 
     <p style="font-size:12px; color:#6b7a3a; margin-top:6px;">Welche Zahlungsarten zur Verfügung stehen, siehst Du im Zahlungsfenster.</p>
+    <!-- BLOCK:zahlung_agb:START -->
     <p style="margin-top:14px;">Geht die Zahlung nicht rechtzeitig ein, können wir nach einer angemessenen Nachfrist vom Vertrag zurücktreten (&sect;&nbsp;5 unserer <a href="https://www.babelfish-hostel.de/buchungsbedingungen">AGB</a>).</p>
+    <!-- BLOCK:zahlung_agb:END -->
     <!-- BLOCK:zahlung:END -->
 
     <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Check-in &amp; Rezeption</h3>

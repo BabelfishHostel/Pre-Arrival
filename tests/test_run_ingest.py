@@ -9,6 +9,7 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "src"))
 import imaplib
 import os
 import tempfile
+from datetime import date, timedelta
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -16,7 +17,10 @@ import run_ingest
 from db import verbinde
 
 KOPF = "RegNummer;Anreise;Abreise;Buchungsdatum;AnzahlPersonen;Vorname;Nachname;Email;Kanal\r\n"
-ZEILE = "{n};08.10.26 00:00;09.10.26 00:00;01.10.26;1;A;B;gast{n}@example.com;BHC\r\n"
+# Daten relativ zu heute, damit die Aufbewahrungsfrist (Löschung nach Abreise) den Test nicht kippt
+_H = date.today()
+ZEILE = ("{n};" + (_H + timedelta(days=2)).strftime("%d.%m.%y") + " 00:00;" + (_H + timedelta(days=3)).strftime("%d.%m.%y")
+         + " 00:00;" + _H.strftime("%d.%m.%y") + ";1;A;B;gast{n}@example.com;BHC\r\n")
 
 
 class Server:

@@ -92,9 +92,7 @@
        {{abreise}}  e.g. "Sun, 11 Oct 2026"
        {{naechte}}  e.g. "2 nights"
        {{gaeste}}   e.g. "1 guest" / "4 guests"
-       {{stornofrist}} end of the free cancellation period,
-                    e.g. "Wed, 7 Oct"
-       {{betrag}}   e.g. "EUR 52.80" (decimal point, not comma)
+       {{stornofrist}} only in block storno_datum, e.g. "Wed, 7 Oct"
        {{events}}   event HTML, English titles from column
                     "Titel EN"; if empty, fall back to the German
                     title ("Titel DE") – proper names such as
@@ -114,9 +112,10 @@
        during your stay on
        <a href="EVENTSEITE_URL">our events page</a>.</p>
 
-     Blocks: storno_flex_vor_frist, storno_flex_nach_frist,
-     storno_fix, zahlung – identical names to the German file so
-     the same script logic applies to both.
+     Blocks: storno_morgen, storno_heute, storno_datum, zahlung,
+     zahlung_anzahlung, zahlung_rest, zahlung_gesamt, zahlung_agb –
+     identical names to the German file so the same script logic
+     applies to both.
      ============================================================ -->
 <table width="100%" border="0" cellpadding="0" cellspacing="0" bgcolor="#e9e5da">
 <tr><td align="center">
@@ -140,42 +139,36 @@
       <p style="margin-bottom:4px;"><strong>Length of stay:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Guests:</strong> {{gaeste}}</p>
     </div>
 
-    <!-- BLOCK:storno_flex_vor_frist:START -->
     <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
       <tr>
         <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
           <strong>Does everything look right?</strong>
-          If your plans have changed: you can still cancel free of charge until <strong>{{stornofrist}}</strong> &ndash; just reply to your booking confirmation by email. After that, and in case of no-show, we charge 90&nbsp;% of the booking price.
+          Please check that the dates and the number of guests are correct.
+          <!-- BLOCK:storno_morgen:START -->
+          The free cancellation period ends tomorrow.
+          <!-- BLOCK:storno_morgen:END -->
+          <!-- BLOCK:storno_heute:START -->
+          The free cancellation period ends today.
+          <!-- BLOCK:storno_heute:END -->
+          <!-- BLOCK:storno_datum:START -->
+          The free cancellation period ends on <strong>{{stornofrist}}</strong>.
+          <!-- BLOCK:storno_datum:END -->
+          If you can't make it, please let us know &ndash; then we'll know and won't keep the bed waiting for you.
         </td>
       </tr>
     </table>
-    <!-- BLOCK:storno_flex_vor_frist:END -->
-
-    <!-- BLOCK:storno_flex_nach_frist:START -->
-    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
-      <tr>
-        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
-          <strong>Does everything look right?</strong>
-          The free cancellation period has ended. If you still can't make it, please let us know anyway &ndash; then we won't keep the bed waiting for you.
-        </td>
-      </tr>
-    </table>
-    <!-- BLOCK:storno_flex_nach_frist:END -->
-
-    <!-- BLOCK:storno_fix:START -->
-    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
-      <tr>
-        <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
-          <strong>Does everything look right?</strong>
-          Please check that the dates and the number of guests are correct. If you can't make it after all, please let us know.
-        </td>
-      </tr>
-    </table>
-    <!-- BLOCK:storno_fix:END -->
 
     <!-- BLOCK:zahlung:START -->
     <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Payment</h3>
-    <p style="margin-top:14px;">Your booking still requires an advance payment of <strong>{{betrag}}</strong>. Please pay by <strong>{{zahlungsfrist}}</strong> using this link:</p>
+    <!-- BLOCK:zahlung_anzahlung:START -->
+    <p style="margin-top:14px;">A deposit is due for your booking and has not been paid yet. Please use the following payment link, otherwise we cannot guarantee your booking.</p>
+    <!-- BLOCK:zahlung_anzahlung:END -->
+    <!-- BLOCK:zahlung_rest:START -->
+    <p style="margin-top:14px;">You have already paid a deposit, so your booking is guaranteed. You can use the following payment link to pay the remaining balance.</p>
+    <!-- BLOCK:zahlung_rest:END -->
+    <!-- BLOCK:zahlung_gesamt:START -->
+    <p style="margin-top:14px;">Your booking is guaranteed. You can use the following payment link to pay for your booking in advance.</p>
+    <!-- BLOCK:zahlung_gesamt:END -->
 
     <table border="0" cellpadding="0" cellspacing="0" style="margin:18px 0 6px 0;">
       <tr>
@@ -186,7 +179,9 @@
     </table>
 
     <p style="font-size:12px; color:#6b7a3a; margin-top:6px;">You'll see which payment methods are available in the payment window.</p>
+    <!-- BLOCK:zahlung_agb:START -->
     <p style="margin-top:14px;">If we don't receive your payment in time, we may withdraw from the contract after a reasonable grace period (section&nbsp;5 of our <a href="https://www.babelfish-hostel.de/en/booking-conditions/">General Terms and Conditions</a>).</p>
+    <!-- BLOCK:zahlung_agb:END -->
     <!-- BLOCK:zahlung:END -->
 
     <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Check-in &amp; reception</h3>

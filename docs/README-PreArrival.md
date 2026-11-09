@@ -16,7 +16,7 @@ Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet ni
 
 ## Datenquelle: die CSV von ASSD
 
-Die CSV „Anreise in 2 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
+Die CSV „Anreise in 2 Tagen“ (künftig: 3 Tage, siehe „Offen“) kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
 
 | Spalte | Verwendung |
 |---|---|
@@ -27,8 +27,9 @@ Die CSV „Anreise in 2 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendet
 | `Email` | Empfänger |
 | `Sprache` | `D` → Deutsch, `E` → Englisch |
 | `Kanal` | `EGB` (eigene Buchungsstrecke), `BHC` (Booking.com), `EHC` (Expedia); leer = Buchung vor Ort oder am Telefon (dann ist auch die `Buchungsnummer` leer) |
-| `amou1`, `Paylink` | offener Zahlbetrag und persönlicher Zahlungslink; **beide leer = bereits bezahlt** |
-| `total` | Buchungssumme (wird gespeichert, aktuell nicht in der Mail verwendet) |
+| `amou1`, `Paylink` | offener Restbetrag (total minus bereits gezahlt) und persönlicher Zahlungslink für genau diesen Betrag; **beide leer = bereits bezahlt** |
+| `total` | Buchungssumme; zusammen mit `amou1` entscheidet sie, ob schon etwas gezahlt wurde (`total` = `amou1` → noch nichts bezahlt) |
+| `Rate` | Ratenart, z. B. `FLEX`, `OTA`, `NRF` und weitere. Ausgewertet wird nur `FLEX` (beginnt mit „flex“, Groß-/Kleinschreibung egal); alles andere zählt als „nicht Flex“ |
 
 Adresse, PLZ und Stadt werden nicht gespeichert. Die Stadt dient beim Import nur dazu, einen als Vorname eingetragenen Ortsnamen zu erkennen.
 
@@ -41,27 +42,32 @@ Bei einer späteren Zahlungserinnerung bewusst anders formulieren, sonst wird si
 
 ## Platzhalter
 
-`{{anrede}}` `{{buchungsnummer}}` `{{anreise}}` `{{abreise}}` `{{naechte}}` `{{gaeste}}` `{{events}}` `{{stornofrist}}` `{{betrag}}` `{{zahlungsfrist}}` `{{paymentlink}}`
+`{{anrede}}` `{{buchungsnummer}}` `{{anreise}}` `{{abreise}}` `{{naechte}}` `{{gaeste}}` `{{events}}` `{{stornofrist}}` `{{paymentlink}}`
 
-`{{stornofrist}}` steht nur im Block `storno_flex_vor_frist`, `{{betrag}}`, `{{zahlungsfrist}}` und `{{paymentlink}}` nur im Zahlungsblock. Formate: DE `Fr, 9. Okt 2026`, `528,00 EUR`, `2 Nächte`, `1 Gast` / `4 Gäste`; EN `Fri, 9 Oct 2026`, `EUR 528.00`, `2 nights`, `1 guest` / `4 guests`. Wochentage und Monate sind fest hinterlegt und unabhängig von der Systemsprache.
+`{{stornofrist}}` steht nur im Block `storno_datum`, `{{paymentlink}}` nur im Zahlungsbereich. Der Betrag steht nicht mehr in der Mail (er erscheint im Zahlungsfenster). Formate: DE `Fr, 9. Okt 2026`, `528,00 EUR`, `2 Nächte`, `1 Gast` / `4 Gäste`; EN `Fri, 9 Oct 2026`, `EUR 528.00`, `2 nights`, `1 guest` / `4 guests`. Wochentage und Monate sind fest hinterlegt und unabhängig von der Systemsprache.
 
 ## Blöcke und wann sie erscheinen
 
-Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BLOCK:name:END -->`. Der Job behält pro Gast genau einen Storno-Block und entfernt die übrigen samt Markern. Nach dem Rendern bleiben weder Kommentare noch Platzhalter übrig, sonst bricht der Versand für diesen Gast mit einem Fehler ab.
+Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BLOCK:name:END -->`. Der Job entfernt nicht benötigte Blöcke samt Markern. Nach dem Rendern bleiben weder Kommentare noch Platzhalter übrig, sonst bricht der Versand für diesen Gast mit einem Fehler ab.
 
-**Storno-Block** (abhängig von der Rate):
+**Bereich „Stimmt alles?“** ist für alle Gäste gleich: „Schau kurz drüber, ob Datum und Personenzahl passen. [Frist-Satz] Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ Für alle Buchungen der Liste gilt die kostenfreie Stornierung bis `STORNO_TAGE` (Standard 2) Tage vor Anreise. Der Frist-Satz richtet sich nach dem Versandtag, damit er nie falsch ist:
 
-| Block | Wann |
-|---|---|
-| `storno_flex_vor_frist` | Rate Flex und heute liegt **vor** dem Ende der kostenfreien Stornofrist (Anreise minus `STORNO_TAGE`, Standard 2 Tage) |
-| `storno_flex_nach_frist` | Rate Flex, Frist erreicht oder abgelaufen |
-| `storno_fix` | Rate Fix **oder Rate unbekannt** (sichere Variante ohne Stornozusage) |
+| Block | Wann | Text |
+|---|---|---|
+| `storno_morgen` | Frist endet morgen (Normalfall bei Versand 3 Tage vor Anreise) | „Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.“ |
+| `storno_heute` | Frist endet heute | „… läuft heute ab.“ |
+| `storno_datum` | Frist endet später | „… läuft am *Mi, 7. Okt* ab.“ |
+| (keiner) | Frist schon abgelaufen | der Satz entfällt |
 
-Da die CSV bisher **keine Rate** liefert, gilt `RATE_STANDARD=fix`, und alle Gäste bekommen `storno_fix`. Die Unterscheidung Flex/Fix wirkt erst, wenn eine Rate-Spalte vorliegt. Mit der CSV „Anreise in 2 Tagen“ ist die Stornofrist beim Versand ohnehin meist schon erreicht, Flex-Gäste würden dann `storno_flex_nach_frist` bekommen.
+**Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint, wenn die CSV einen `Paylink` enthält (leer = bezahlt; das entscheidet ASSD beim Erzeugen der CSV). Der Einleitungssatz hängt von Kanal, Rate und Zahlstand ab:
 
-**Zahlungsblock `zahlung`** erscheint, wenn die CSV für den Gast sowohl Betrag (`amou1`) als auch `Paylink` enthält. Ob eine Zahlung offen ist, entscheidet ASSD beim Erzeugen der CSV (bezahlt = beide leer); Kanal und Rate spielen keine Rolle. Das gilt auch für Buchungen vor Ort oder am Telefon.
+| Block | Wann | Text (DE) |
+|---|---|---|
+| `zahlung_anzahlung` | Kanal `EGB`, Rate `FLEX`, noch nichts bezahlt (`amou1` ≥ `total`) | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
+| `zahlung_rest` | Kanal `EGB`, Rate `FLEX`, Anzahlung geleistet (`amou1` < `total`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
+| `zahlung_gesamt` | alle anderen Gäste mit Paylink (Portale, OTA, Fix, Buchung vor Ort, auch `@guest.booking.com`) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
 
-Warnung im Log (die Mail wird trotzdem gesendet): Paylink ohne Betrag (der Block entfällt) sowie Paylink bei Portalbuchungen (`BHC`, `EHC`, `@guest.booking.com`). Diese Adressen sind Weiterleitungen von Booking.com, eine Zahlungsaufforderung darüber verstößt gegen deren Regeln. Die Zahlungsfrist ist optional: Ohne `ZAHLUNGSFRIST_TAGE` entfällt der Satzteil „bis …“ bzw. „by …“ in der Mail.
+Ohne Rate in der CSV gilt `RATE_STANDARD=fix`, also nie Anzahlung oder Rest. Ist bei Kanal `EGB` und Rate `FLEX` der Paylink gefüllt, aber `amou1` oder `total` leer, ist die Variante nicht entscheidbar: Der Zahlungsbereich entfällt und das Log enthält eine Warnung (die Mail geht trotzdem raus). `Anzahlung` und `Anzahlung_bis` aus der CSV werden nicht verwendet. Zahlungsfrist und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
 
 ## Anrede
 
@@ -102,7 +108,7 @@ Zur Priorisierung: Bis auf „Uni & Kongress“ sind alle Kategorien gleichberec
 
 ## Versandzeitpunkt
 
-Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor Ort oder am Telefon (entschieden am 06.11.2026). Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 2 Tage). Da die CSV Anreisen in zwei Tagen enthält, geht die Mail normalerweise zwei Tage vor Anreise raus. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
+Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor Ort oder am Telefon (entschieden am 06.11.2026). Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER` (Standard 3 Tage). Die Mail geht normalerweise drei Tage vor Anreise raus (CSV „Anreise in 3 Tagen“). Solange ASSD noch die CSV für zwei Tage liefert, geht sie zwei Tage vorher raus; der Frist-Satz passt sich an. Jeder Gast bekommt sie nur einmal (`mail_log`). Solange `SEND_MODUS=vorschau` gilt, wird nichts versendet.
 
 ## Technische Festlegungen
 
@@ -120,17 +126,19 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Buchungsnummer: eigene Spalte `Buchungsnummer`
 - Logo: Adresse korrigiert (Bestätigungsmail)
 - Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
-- Zahlungsblock: erscheint, sobald Paylink und Betrag in der CSV stehen (Kanal/Rate egal); `ZAHLUNG_REGEL` entfällt, Warnung bei Portalbuchungen mit Paylink (06.11.2026)
+- Zahlungs- und Storno-Texte (09.11.2026): Zahlungsbereich bei Paylink, Varianten Anzahlung/Rest/Gesamt nach Kanal EGB + Rate FLEX + Zahlstand; „Stimmt alles?“ mit Frist-Satz je nach Versandtag; Spalten `Rate`, `Anzahlung`, `Anzahlung_bis`, `amou3` in der CSV (Import geprüft); Buchungsnummer in der CSV korrigiert; Zahlungsfrist entfällt; Versand 3 Tage vor Anreise
+- Cronjob auf dem NAS läuft, Vorschauen werden erstellt
+- Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
 - Events: Sheet angebunden (Spaltenköpfe des echten Sheets geprüft), `EVENTS_SHEET_ID` und `EVENTSEITE_URL` gesetzt, Theater gleichberechtigt, höchstens 4 Einträge, Abschlusslink „Mehr Tipps findest Du im Eventbereich unserer Website.“ (Vorschau auf dem NAS geprüft, 05.11.2026)
 
 ## Offen
 
-1. **Rate (Flex/Fix):** fehlt weiterhin in der CSV. Ohne sie bekommen alle Gäste den Fix-Text.
-2. **Zahlungsfrist:** mit ASSD / intern klären; eventuell entfällt sie, und der Satz wird ohne Datum formuliert.
-3. **Spätanreise-Frist:** „bis zum Tag vor der Anreise“ ist ein Vorschlag und noch nicht entschieden. Mit einem Versand zwei Tage vor Anreise ist die Frist knapp.
+1. **CSV auf „Anreise in 3 Tagen“ umstellen:** ASSD liefert künftig die Anreisen in drei Tagen. Auf dem NAS dann `VERARBEITET_ORDNER`, ggf. den Mailordner und `SEND_TAGE_VORHER=3` (neuer Standard) prüfen. Bis dahin geht die Mail zwei Tage vorher raus.
+2. **Rate prüfen:** Sobald ein Flex-Gast (Kanal `EGB`) mit offener Zahlung in der CSV steht, die Vorschau ansehen (Anzahlungstext, bei Teilzahlung Resttext).
+3. **ASSD melden:** Zeilen enden manchmal ohne das letzte leere Feld `Paylink` (25 statt 26 Felder, harmlos), und `BHC` zusammen mit `FLEX` sollte nicht vorkommen.
 4. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-5. **Kurzfristbuchungen:** Wer weniger als zwei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
-6. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären auch Gäste fällig, die heute anreisen. Vorher festlegen, wie der Start aussieht.
+5. **Kurzfristbuchungen:** Wer weniger als drei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
+6. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
 7. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
 8. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).

@@ -8,7 +8,7 @@ Modi (Standard ist der sichere Trockenlauf):
     python run_send.py --test-an a@b.de   sendet ALLE fälligen Mails an diese Testadresse (kein Log)
     python run_send.py --live             echter Versand an die Gäste, Protokoll in mail_log
 
-Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 2),
+Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 3),
 und für die Vorlage gibt es noch keinen 'gesendet'/'uebersprungen'-Eintrag.
 Fehlgeschlagene Mails ('fehler') werden beim nächsten Lauf erneut versucht
 (höchstens MAX_VERSUCHE). Ein Eintrag, der bei 'geplant' hängen blieb (Absturz
@@ -31,7 +31,7 @@ from typing import Callable, List, Optional
 from db import init_db, jetzt, verbinde
 from events import EventQuelle
 from graph_mail import VersandFehler, baue_mime, hole_graph_token, sende_mime
-from render import MailDaten, render_mail, storno_block, zahlung_aktiv
+from render import MailDaten, render_mail, zahlung_variante
 from run_ingest import STANDARD_ENV, lade_env, pfad_aus_env
 
 log = logging.getLogger("run_send")
@@ -45,11 +45,10 @@ EMAIL_MUSTER = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 class SendKonfig:
     absender: str = "info@babelfish-hostel.de"
     postfach: str = ""                      # Graph-Postfach, Standard = absender
-    tage_vorher: int = 2
+    tage_vorher: int = 3
     sprache_standard: str = "de"
-    rate_standard: str = "fix"              # sicher: keine Stornozusage, keine Zahlungsaufforderung
-    storno_tage: int = 2
-    zahlungsfrist_tage: Optional[int] = None  # Frist = Anreise minus N Tage; None = keine Frist in der Mail
+    rate_standard: str = "fix"              # nur FLEX löst den Anzahlungstext aus
+    storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
     vorschau_dir: Optional[Path] = None
 
 
@@ -76,17 +75,16 @@ def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungese
     return [z for z in zeilen if z["m_status"] in (None, "geplant", "fehler")]
 
 
-def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
-    """Hinweistext (ohne Personendaten) bei auffälligen Zahlungsdaten, sonst None.
+def zahlung_hinweis(z: sqlite3.Row, rate_standard: str = "fix") -> Optional[str]:
+    """Hinweistext (ohne Personendaten) bei unklaren Zahlungsdaten, sonst None.
 
-    * Paylink ohne Betrag: Der Zahlungsblock entfällt, die Mail geht ohne ihn raus.
-    * Paylink bei Portalbuchung (BHC/EHC oder Booking.com-Weiterleitung): Booking.com untersagt direkte
-      Zahlungsaufforderungen über die Weiterleitung. Die Mail wird NICHT unterdrückt, aber gemeldet.
+    Kanal EGB + Rate FLEX mit Paylink, aber ohne Betrag (amou1) oder Gesamtpreis (total): Anzahlung, Rest
+    oder Gesamt sind nicht entscheidbar, der Zahlungsbereich entfällt, die Mail geht ohne ihn raus.
     """
-    if z["paylink"] and z["betrag"] is None:
-        return "Paylink ohne Betrag - Zahlungsblock entfällt"
-    if z["paylink"] and ((z["kanal"] or "").upper() in ("BHC", "EHC") or (z["email"] or "").lower().endswith("@guest.booking.com")):
-        return "Paylink bei Portalbuchung - bitte prüfen (Booking.com-Regeln)"
+    rate = z["rate"] or rate_standard
+    if z["paylink"] and (z["kanal"] or "").upper() == "EGB" and rate == "flex" \
+            and (z["betrag"] is None or z["gesamtbetrag"] is None):
+        return "Paylink, aber Betrag oder Gesamtpreis fehlt - Zahlungsbereich entfällt"
     return None
 
 
@@ -97,9 +95,9 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
         vorname=z["vorname"], buchungsnummer=z["buchungsnummer"] or z["reg_nummer"],
         anreise=anreise, abreise=date.fromisoformat(z["abreise"]), personen=z["anzahl_personen"],
         sprache=sprache, rate=z["rate"] or k.rate_standard, kanal=z["kanal"], heute=heute,
-        events_html=events.html(anreise, sprache), storno_tage=k.storno_tage,
-        betrag=z["betrag"], paymentlink=z["paylink"],
-        zahlungsfrist=(anreise - timedelta(days=k.zahlungsfrist_tage)) if k.zahlungsfrist_tage is not None else None,
+        events_html=events.html(anreise, sprache),
+        betrag=z["betrag"], gesamtbetrag=z["gesamtbetrag"], paymentlink=z["paylink"],
+        storno_tage=k.storno_tage,
     )
 
 
@@ -145,7 +143,7 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: ungültige E-Mail-Adresse")
             continue
-        hinweis = zahlung_hinweis(z)
+        hinweis = zahlung_hinweis(z, k.rate_standard)
         if hinweis:
             erg.details.append(f"{ref}: {hinweis}")
             log.warning("%s: %s", ref, hinweis)
@@ -166,8 +164,8 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             if k.vorschau_dir:
                 k.vorschau_dir.mkdir(parents=True, exist_ok=True)
                 (k.vorschau_dir / f"{z['reg_nummer']}_{d.sprache}.html").write_text(mail["html"], encoding="utf-8")
-            log.info("TROCKENLAUF %s: %s, Storno=%s, Zahlung=%s", ref, d.sprache.upper(),
-                     storno_block(d), "ja" if zahlung_aktiv(d) else "nein")
+            log.info("TROCKENLAUF %s: %s, Rate=%s, Zahlung=%s", ref, d.sprache.upper(),
+                     d.rate, zahlung_variante(d) or "nein")
             continue
 
         empfaenger = test_an if modus == "test" else z["email"]
@@ -197,11 +195,10 @@ def lese_konfig() -> SendKonfig:
     e = os.environ.get
     k = SendKonfig(
         absender=e("SEND_ABSENDER", "info@babelfish-hostel.de"),
-        tage_vorher=int(e("SEND_TAGE_VORHER", "2")),
+        tage_vorher=int(e("SEND_TAGE_VORHER", "3")),
         sprache_standard=e("SPRACHE_STANDARD", "de").lower(),
         rate_standard=e("RATE_STANDARD", "fix").lower(),
         storno_tage=int(e("STORNO_TAGE", "2")),
-        zahlungsfrist_tage=int(e("ZAHLUNGSFRIST_TAGE", "")) if e("ZAHLUNGSFRIST_TAGE", "").strip() else None,
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
     if k.sprache_standard not in ("de", "en") or k.rate_standard not in ("flex", "fix"):

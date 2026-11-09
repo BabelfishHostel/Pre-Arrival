@@ -4,7 +4,7 @@ Verschickt automatisch Informationsmails an Gäste, die in den nächsten Tagen i
 
 ## Ablauf
 
-1. Das PMS (ASSD) schickt täglich per Cronjob eine CSV mit den Anreisen in 2 Tagen an ein Postfach.
+1. Das PMS (ASSD) schickt täglich per Cronjob eine CSV mit den Anreisen in 3 Tagen (bis zur Umstellung bei ASSD: 2 Tagen) an ein Postfach.
 2. Der **Ingest-Job** (`src/run_ingest.py`) holt die Mail ab und liest die CSV in die SQLite-Datenbank.
 3. Der **Versand-Job** (`src/run_send.py`) verschickt die Mails an fällige Gäste und protokolliert sie in `mail_log`.
 4. Der **Tagesjob** (`src/run_daily.py`) führt beides nacheinander aus und ist für den Cronjob gedacht.
@@ -61,7 +61,7 @@ Als Cronjob auf dem NAS (ASSD schickt die CSV um 06:00 Uhr), stündlich von 06:1
     python src/run_send.py --test-an ich@example.de # alle fälligen Mails an eine Testadresse, kein Protokoll
     python src/run_send.py --live                   # echter Versand, Protokoll in mail_log
 
-Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER`. Pro Gast wird die Mail nur einmal gesendet (`mail_log`). Fehler werden bis zu 3-mal wiederholt; ein beim Senden abgebrochener Eintrag wird nie automatisch wiederholt (kein Doppelversand). Der Zahlungsblock erscheint, wenn die CSV `Paylink` und `amou1` enthält (beide leer = bezahlt, das entscheidet ASSD beim Erzeugen der CSV); Kanal und Rate spielen keine Rolle. Bei Paylink ohne Betrag oder bei Portalbuchungen (BHC/EHC, Booking.com-Weiterleitung) meldet der Job eine Warnung im Log. Die Zahlungsfrist ist optional (`ZAHLUNGSFRIST_TAGE`). Ohne Rate in der CSV gilt `RATE_STANDARD` (Fix). Sprache kommt aus der Spalte `Sprache` (D/E), nur ohne Spalte gilt die PLZ-Regel. Die Buchungsnummer kommt aus der Spalte `Buchungsnummer`.
+Fällig sind Anreisen von heute bis heute + `SEND_TAGE_VORHER`. Pro Gast wird die Mail nur einmal gesendet (`mail_log`). Fehler werden bis zu 3-mal wiederholt; ein beim Senden abgebrochener Eintrag wird nie automatisch wiederholt (kein Doppelversand). Der Zahlungsbereich erscheint, wenn die CSV einen `Paylink` enthält (leer = bezahlt, das entscheidet ASSD). Der Einleitungssatz unterscheidet Anzahlung, Rest und Gesamtzahlung: Anzahlung/Rest nur bei Kanal `EGB` und Rate `FLEX` (`amou1` ≥ `total` = noch nichts bezahlt), alle anderen Gäste mit Paylink bekommen den Gesamttext. Der Frist-Satz zur kostenfreien Stornierung (`STORNO_TAGE`, Standard 2) richtet sich nach dem Versandtag. Sprache kommt aus der Spalte `Sprache` (D/E), nur ohne Spalte gilt die PLZ-Regel. Die Buchungsnummer kommt aus der Spalte `Buchungsnummer`.
 
 ## Tests
 
