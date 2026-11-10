@@ -16,7 +16,7 @@ Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet ni
 
 ## Datenquelle: die CSV von ASSD
 
-Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Verwendete Spalten:
+Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enthält seit 10.11.2026 alle Anreisen von heute bis heute + 3 Tage, ein Gast steht also bis zu 4-mal darin (der Import aktualisiert dieselbe `RegNummer`, das Mail-Log erlaubt nur einen Versand pro Gast). Verwendete Spalten (26 Spalten, die letzte ist `Paylink`):
 
 | Spalte | Verwendung |
 |---|---|
@@ -129,6 +129,8 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Zahlungs- und Storno-Texte (09.11.2026): Zahlungsbereich bei Paylink, Varianten Anzahlung/Rest/Gesamt nach Kanal EGB + Rate FLEX + Zahlstand; „Stimmt alles?“ mit Frist-Satz je nach Versandtag; Spalten `Rate`, `Anzahlung`, `Anzahlung_bis`, `amou3` in der CSV (Import geprüft); Buchungsnummer in der CSV korrigiert; Zahlungsfrist entfällt; Versand 3 Tage vor Anreise
 - Umstellung auf „Anreise in 3 Tagen“ (11/2026): ASSD-CSV, Mailordner, Abfrage und Dateinamen auf dem NAS angepasst; im Projekt war dafür keine Codeänderung nötig (Betreff-Filter „Anreise“ trifft weiterhin, Standard `SEND_TAGE_VORHER=3`)
 - Hinweise an ASSD zur CSV notiert und erledigt: letzte leere Spalte `Paylink` kann fehlen (25 statt 26 Felder, harmlos), `BHC` zusammen mit `FLEX` sollte nicht vorkommen
+- CSV-Abfrage bei ASSD: alle Anreisen von heute bis heute + 3 Tage (deckt Kurzfristbuchungen ab, 10.11.2026); Beispiel-CSV geprüft, 21 Paylinks, keine Warnungen
+- Import abgesichert: Hat eine Zeile mehr gefüllte Felder als die Kopfzeile Spalten (z. B. fehlt `Paylink` in der Kopfzeile), bricht der Import ab, die Mail bleibt ungelesen und es wird nichts importiert. Zeilen ganz ohne E-Mail-Adresse (z. B. Buchung vor Ort) zählen nur als Hinweis, nicht als Fehler (der frühere „Importfehler Zeile #5“)
 - Cronjob auf dem NAS läuft, Vorschauen werden erstellt
 - Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
@@ -138,7 +140,8 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 1. **Rate prüfen:** Sobald ein Flex-Gast (Kanal `EGB`) mit offener Zahlung in der CSV steht, die Vorschau ansehen (Anzahlungstext, bei Teilzahlung Resttext).
 2. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-3. **Kurzfristbuchungen:** Wer weniger als drei Tage vor Anreise bucht, steht in keiner CSV und bekommt keine Mail. Regel nötig.
-4. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
-5. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
-6. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+3. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
+4. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
+5. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+6. **Nichtanreisetext anpassen:** Der Satz zur Nichtanreise im Bereich „Stimmt alles?“ („Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – …“) soll zwischen Direktbuchung (Kanal `EGB`) und OTA-Buchung (z. B. `BHC`, `EHC`) unterscheiden. Zu klären: Wortlaut je Fall (z. B. bei OTA Hinweis auf Stornierung über das Portal statt per Antwort-Mail, da die Antwort an die Weiterleitungsadresse nicht beim Hostel ankommt), Behandlung von Buchungen ohne Kanal (vor Ort/Telefon) und ob die Rate `OTA` oder der Kanal das Kriterium ist. *(aufgenommen am 09.11.2026)*
+7. **Zahlungsbereich auch bei vollständig bezahlten Buchungen?** Überlegen, ob der Bereich „Zahlung“ auch erscheinen soll, wenn alles bezahlt ist (kein Paylink), nur mit einem Bestätigungstext, dass bereits bezahlt wurde, ohne Button. Zu klären: Wortlaut (DE/EN), ob das für alle Gäste gilt (auch Portalbuchungen, bei denen das Portal kassiert, oder Buchungen vor Ort), und woran „vollständig bezahlt“ erkannt wird. Bisher bedeutet ein leerer Paylink „bezahlt“, aber auch „Zahlung nicht erforderlich“ oder fehlende Daten. Ein Bestätigungstext sollte nur kommen, wenn sicher bezahlt wurde (z. B. `total` gefüllt und `amou1` = 0 oder leer). *(aufgenommen am 09.11.2026)*

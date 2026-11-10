@@ -10,7 +10,13 @@ nicht über die Position; zusätzliche Spalten werden ignoriert.
 Verhalten:
     * Dieselbe Datei (gleicher SHA-256) wird nie zweimal verarbeitet.
     * Je RegNummer genau ein Gast; erneute Importe aktualisieren ihn.
-    * Fehlerhafte Zeilen (keine/ungültige E-Mail, unlesbares Datum) werden
+    * Zeilen ganz ohne E-Mail-Adresse (z. B. Buchung vor Ort oder am Telefon)
+      werden übersprungen und nur als Hinweis gezählt, nicht als Fehler.
+    * Hat eine Zeile mehr gefüllte Felder als die Kopfzeile Spalten (z. B. fehlt
+      "Paylink" in der Kopfzeile), wird nichts importiert (ImportFehler): sonst
+      gingen Felder wie der Paylink lautlos verloren und die Mail würde ohne
+      Zahlungsbereich versendet, was sich nicht mehr korrigieren lässt.
+    * Fehlerhafte Zeilen (ungültige E-Mail, unlesbares Datum) werden
       übersprungen und im import_log vermerkt, der Rest wird importiert.
       Ist keine einzige Zeile lesbar, wird nichts importiert und nichts
       vermerkt (ImportFehler), damit ein verändertes Format auffällt.
@@ -60,6 +66,8 @@ class ImportErgebnis:
     aktualisiert: int = 0
     fehler: int = 0
     fehler_details: List[str] = field(default_factory=list)
+    ohne_email: int = 0                      # Zeilen ganz ohne Adresse: kein Versand, kein Fehler
+    hinweise: List[str] = field(default_factory=list)
 
 
 def _datum(text: str) -> Optional[str]:
@@ -116,6 +124,10 @@ def _rate(text: Optional[str]) -> Optional[str]:
     return None
 
 
+class ZeileOhneEmail(ValueError):
+    """Zeile ohne jede E-Mail-Adresse: wird übersprungen, ist aber kein Datenfehler."""
+
+
 def _zeile_lesen(zeile: dict) -> dict:
     """Prüft und normalisiert eine CSV-Zeile.
 
@@ -126,6 +138,8 @@ def _zeile_lesen(zeile: dict) -> dict:
     if not reg:
         raise ValueError("RegNummer fehlt")
     email = (zeile.get("Email") or "").strip().lower()
+    if not email:
+        raise ZeileOhneEmail("keine E-Mail-Adresse, kein Versand")
     if not EMAIL_MUSTER.match(email):
         raise ValueError(f"ungültige oder fehlende E-Mail ({email or 'leer'})")
     anreise, abreise = _datum(zeile.get("Anreise")), _datum(zeile.get("Abreise"))
@@ -239,8 +253,19 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
             if not any((wert or "").strip() for wert in zeile.values()):
                 continue  # Leerzeile, z. B. am Dateiende
             ergebnis.gesamt += 1
+            zuviel = [w for w in (zeile.get(None) or []) if (w or "").strip()]
+            if zuviel:
+                raise ImportFehler(
+                    f"Zeile {leser.line_num}: {len(zuviel)} gefüllte(s) Feld(er) mehr als die Kopfzeile "
+                    f"Spalten hat ({len(kopf)}). Fehlt eine Spalte in der Kopfzeile (z. B. Paylink)? "
+                    "Es wurde nichts importiert."
+                )
             try:
                 daten = _zeile_lesen(zeile)
+            except ZeileOhneEmail as exc:
+                ergebnis.ohne_email += 1
+                ergebnis.hinweise.append(f"Zeile {leser.line_num}: {exc}")
+                continue
             except ValueError as exc:
                 ergebnis.fehler += 1
                 ergebnis.fehler_details.append(f"Zeile {leser.line_num}: {exc}")
@@ -255,7 +280,7 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
             else:
                 ergebnis.neu += 1
 
-        if ergebnis.gesamt and ergebnis.fehler == ergebnis.gesamt:
+        if ergebnis.gesamt and ergebnis.fehler and ergebnis.fehler + ergebnis.ohne_email == ergebnis.gesamt:
             # Kein einziger Gast lesbar: vermutlich ein verändertes Dateiformat.
             # Exception => Rollback, die Datei wird nicht als importiert vermerkt.
             beispiele = "; ".join(ergebnis.fehler_details[:3])
@@ -287,7 +312,8 @@ def main(argv: List[str]) -> int:
     if erg.bereits_importiert:
         print("Datei wurde schon importiert - nichts zu tun.")
     else:
-        print(f"{erg.gesamt} Zeilen: {erg.neu} neu, {erg.aktualisiert} aktualisiert, {erg.fehler} Fehler")
+        print(f"{erg.gesamt} Zeilen: {erg.neu} neu, {erg.aktualisiert} aktualisiert, {erg.fehler} Fehler, "
+              f"{erg.ohne_email} ohne E-Mail")
         for meldung in erg.fehler_details:
             print("  -", meldung)
     return 0

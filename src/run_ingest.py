@@ -197,8 +197,8 @@ def verarbeite_postfach(
                 log.info("%s: bereits importiert, Mail wird nur abgeschlossen.", ergebnis.dateipfad.name)
             else:
                 log.info(
-                    "%s: %d Zeilen, %d neu, %d aktualisiert, %d Fehler.",
-                    ergebnis.dateipfad.name, imp.gesamt, imp.neu, imp.aktualisiert, imp.fehler,
+                    "%s: %d Zeilen, %d neu, %d aktualisiert, %d Fehler, %d ohne E-Mail (kein Versand).",
+                    ergebnis.dateipfad.name, imp.gesamt, imp.neu, imp.aktualisiert, imp.fehler, imp.ohne_email,
                 )
                 if imp.gesamt == 0:
                     log.info("Keine Anreisen in dieser Datei.")

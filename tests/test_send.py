@@ -375,6 +375,49 @@ NEUE_CSV_2026_11 = (
 )
 
 
+def test_csv_schutz():
+    """Kopfzeile ohne Paylink: Abbruch statt stillem Verlust; Zeile ohne E-Mail ist nur ein Hinweis."""
+    from csv_import import ImportFehler, importiere_csv
+    kopf_ohne = NEUE_CSV_2026_11.split("\r\n")[0].rsplit(";Paylink", 1)[0]
+    zeilen = NEUE_CSV_2026_11.split("\r\n")[1:]
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "s.sqlite")
+        init_db(conn)
+        # 1. Paylink-Feld vorhanden, aber nicht in der Kopfzeile -> nichts importiert, nichts vermerkt
+        pfad = Path(tmp) / "a.csv"
+        pfad.write_bytes(("\r\n".join([kopf_ohne] + zeilen)).encode("utf-8"))
+        try:
+            importiere_csv(conn, pfad)
+            raise AssertionError("ImportFehler erwartet")
+        except ImportFehler as exc:
+            assert "mehr als die Kopfzeile" in str(exc) and "Paylink" in str(exc)
+        assert conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM import_log").fetchone()[0] == 0
+        # 2. Nur leere Zusatzfelder (kein gefülltes Feld über die Kopfzeile hinaus) -> kein Abbruch
+        pfad.write_bytes(("\r\n".join([kopf_ohne] + [z.rsplit(";", 1)[0] + ";" if z.strip() else z for z in zeilen])).encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert e.gesamt == 6 and e.fehler == 0 and e.ohne_email == 0, e
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "t.sqlite")
+        init_db(conn)
+        # 3. Normale CSV: Zeile ohne E-Mail zählt als Hinweis, nicht als Fehler; ungültige Adresse bleibt Fehler
+        pfad = Path(tmp) / "b.csv"
+        text = NEUE_CSV_2026_11.replace("b@example.com", "kaputt").replace(";e@example.com;", ";;")
+        pfad.write_bytes(text.encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (6, 4, 1, 1), e
+        assert "keine E-Mail" in e.hinweise[0] and "kaputt" in e.fehler_details[0]
+        # 4. Nur Zeilen ohne E-Mail: kein ImportFehler
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "u.sqlite")
+        init_db(conn)
+        pfad = Path(tmp) / "c.csv"
+        nur = NEUE_CSV_2026_11.split("\r\n")
+        pfad.write_bytes("\r\n".join([nur[0], nur[5].replace(";e@example.com;", ";;")]).encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (1, 0, 0, 1), e
+
+
 def test_csv_2026_11():
     """CSV-Format vom 08.11.2026: neue Spalten, Zeile mit 25 statt 26 Feldern (letztes leeres Feld fehlt)."""
     from csv_import import importiere_csv

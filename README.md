@@ -43,7 +43,7 @@ Python 3.9 oder neuer. Für das klassische IMAP-Login reicht die Standardbibliot
     cp conf/.env.example conf/.env      # ausfüllen
     python src/run_ingest.py
 
-Der Ingest-Job holt alle ungelesenen CSV-Mails ab, importiert sie, verschiebt sie nach "Verarbeitet", löscht die heruntergeladene CSV und entfernt Gäste nach Ablauf der Aufbewahrungsfrist. Bei einem Fehler endet er mit Exit-Code 1 und lässt die Mail ungelesen. Eine CSV nur mit Kopfzeile gilt als Tag ohne Anreisen.
+Der Ingest-Job holt alle ungelesenen CSV-Mails ab, importiert sie, verschiebt sie nach "Verarbeitet", löscht die heruntergeladene CSV und entfernt Gäste nach Ablauf der Aufbewahrungsfrist. Bei einem Fehler endet er mit Exit-Code 1 und lässt die Mail ungelesen. Das gilt auch, wenn eine Zeile mehr gefüllte Felder hat als die Kopfzeile Spalten (z. B. fehlt `Paylink` in der Kopfzeile). Zeilen ganz ohne E-Mail-Adresse werden übersprungen und als Hinweis im Log gezählt. Eine CSV nur mit Kopfzeile gilt als Tag ohne Anreisen.
 
 Einen einzelnen Import ohne Postfach testen:
 
