@@ -217,7 +217,12 @@
           <!-- BLOCK:storno_datum:START -->
           Der Zeitraum für die kostenfreie Stornierung läuft am <strong>{{stornofrist}}</strong> ab.
           <!-- BLOCK:storno_datum:END -->
+          <!-- BLOCK:nichtanreise_direkt:START -->
           Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.
+          <!-- BLOCK:nichtanreise_direkt:END -->
+          <!-- BLOCK:nichtanreise_ota:START -->
+          Falls Du nicht kommen kannst, geh bitte zur entsprechenden Buchungsplattform und storniere dort Deine Buchung. Wir werden dann von der Plattform automatisch darüber informiert.
+          <!-- BLOCK:nichtanreise_ota:END -->
         </td>
       </tr>
     </table>
@@ -233,7 +238,11 @@
     <!-- BLOCK:zahlung_gesamt:START -->
     <p style="margin-top:14px;">Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.</p>
     <!-- BLOCK:zahlung_gesamt:END -->
+    <!-- BLOCK:zahlung_bezahlt:START -->
+    <p style="margin-top:14px;">Deine Buchung ist bereits komplett bezahlt.</p>
+    <!-- BLOCK:zahlung_bezahlt:END -->
 
+    <!-- BLOCK:zahlung_button:START -->
     <!-- Button als Tabelle, nicht als reiner Link: Outlook stellt
          gestylte <a>-Elemente sonst als blassen Text dar.
          Aktionsfarbe #f0bc12 mit 2 px Charcoal-Rand. -->
@@ -246,6 +255,7 @@
     </table>
 
     <p style="font-size:12px; color:#6b7a3a; margin-top:6px;">Welche Zahlungsarten zur Verfügung stehen, siehst Du im Zahlungsfenster.</p>
+    <!-- BLOCK:zahlung_button:END -->
     <!-- BLOCK:zahlung_agb:START -->
     <p style="margin-top:14px;">Geht die Zahlung nicht rechtzeitig ein, können wir nach einer angemessenen Nachfrist vom Vertrag zurücktreten (&sect;&nbsp;5 unserer <a href="https://www.babelfish-hostel.de/buchungsbedingungen">AGB</a>).</p>
     <!-- BLOCK:zahlung_agb:END -->

@@ -97,13 +97,27 @@ class MailDaten:
     paymentlink: Optional[str] = None       # leer = alles bezahlt, kein Zahlungsbereich
     voraus_datum: Optional[date] = None     # gesetzt = Vorauszahlung nötig (CSV Vorausdatum_1)
     schon_eingegangen: Optional[float] = None   # bisher bezahlt (CSV Schon_eingegangen), leer = 0
+    zahlbetrag: Optional[float] = None      # Gesamtbetrag (CSV Zahlbetrag)
+    restbetrag: Optional[float] = None      # offener Rest (CSV Restbetrag), leer = 0
     kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
     rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
 
 
+def komplett_bezahlt(d: MailDaten) -> bool:
+    """Alles bezahlt: Gesamtbetrag > 0, bereits etwas eingegangen und kein Rest offen."""
+    return (d.zahlbetrag or 0) > 0 and (d.schon_eingegangen or 0) > 0 and (d.restbetrag or 0) <= 0
+
+
+def ota_buchung(d: MailDaten) -> bool:
+    """OTA-Buchung = Kanal gefüllt und nicht EGB. Direktbuchung = Kanal EGB oder leer."""
+    return bool(d.kanal) and d.kanal != "EGB"
+
+
 def zahlung_variante(d: MailDaten) -> Optional[str]:
-    """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest' oder 'gesamt'.
+    """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest', 'gesamt' oder 'bezahlt'.
+
+    * 'bezahlt' (ohne Paylink, ohne Button): alles komplett bezahlt, egal welcher Kanal.
 
     Die Zahlungslogik liegt weitgehend bei ASSD (Spalten der CSV); Kanal und Rate zählen nur
     für den Sonderfall Website-Flex (siehe 'anzahlung').
@@ -115,7 +129,7 @@ def zahlung_variante(d: MailDaten) -> Optional[str]:
     * Sonst: 'gesamt' (keine Anzahlung nötig, Buchung kann im Voraus bezahlt werden).
     """
     if not d.paymentlink:
-        return None
+        return "bezahlt" if komplett_bezahlt(d) else None
     if (d.schon_eingegangen or 0) > 0:
         return "rest"
     if d.voraus_datum is not None or (d.kanal == "EGB" and d.rate == "flex"):
@@ -162,7 +176,8 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     variante = zahlung_variante(d)
     if variante:
         text = _block_behalten(text, "zahlung")
-        for name in ("anzahlung", "rest", "gesamt"):
+        text = _block_behalten(text, "zahlung_button") if d.paymentlink else _block_entfernen(text, "zahlung_button")
+        for name in ("anzahlung", "rest", "gesamt", "bezahlt"):
             blk = f"zahlung_{name}"
             text = _block_behalten(text, blk) if name == variante else _block_entfernen(text, blk)
         text = _block_behalten(text, "zahlung_agb") if variante == "anzahlung" else _block_entfernen(text, "zahlung_agb")
@@ -172,6 +187,10 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     for name in ("morgen", "heute", "datum"):
         blk = f"storno_{name}"
         text = _block_behalten(text, blk) if name == storno else _block_entfernen(text, blk)
+
+    ota = ota_buchung(d)
+    text = _block_entfernen(text, "nichtanreise_direkt") if ota else _block_behalten(text, "nichtanreise_direkt")
+    text = _block_behalten(text, "nichtanreise_ota") if ota else _block_entfernen(text, "nichtanreise_ota")
 
     werte: Dict[str, str] = {
         "anrede": anrede(d.vorname, s),
@@ -183,7 +202,7 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         "events": d.events_html,
         "stornofrist": datum_kurz(d.anreise - timedelta(days=d.storno_tage), s),
     }
-    if variante:
+    if variante and d.paymentlink:
         werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():
         text = text.replace("{{" + key + "}}", wert)

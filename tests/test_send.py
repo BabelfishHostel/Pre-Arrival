@@ -375,7 +375,7 @@ _ZEILEN_NEU = [
     "     90004;5000000004;IBOO4;2026-11-14 00:00:00;2026-11-15 00:00:00;2026-10-17;5;Dora;Test;Str 2;;Ort;d@example.com, d2@example.com;D;BHC;OTA;0.00;0000-00-00;0.00;155.23;155.23;https://pay.example/4",
     # 90005: keine E-Mail, Zeile endet früh (leere Endfelder fehlen)
     "     90005;;333;2026-11-13 00:00:00;2026-11-16 00:00:00;2026-10-08;1;Emil;Test;;;;;D;;;0.00;0000-00-00;0.00;",
-    # 90006: vollständig bezahlt, kein Paylink, kurze Zeile -> kein Zahlungsbereich
+    # 90006: vollständig bezahlt, kein Paylink, kurze Zeile -> Zahlungsbereich mit Text 'bereits komplett bezahlt', ohne Button
     "     90006;410200-20-3;I03;2026-11-15 00:00:00;2026-11-19 00:00:00;2026-11-06;1;Fia;Test;Str 3;91052;Ort;f@example.com;D;EGB;NRF;0.00;0000-00-00;103.60;0;103.60",
     # 90007: schon etwas bezahlt, aber kein Vorausdatum -> Rest
     "     90007;410200-20-4;I04;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-11-01;1;Gus;Test;Str 4;;Ort;g@example.com;E;EGB;FLEX;0.00;0000-00-00;30.00;20;50.00;https://pay.example/7",
@@ -398,13 +398,16 @@ def test_csv_2026_11():
         q = ev.EventQuelle("")
         k = SendKonfig()
         heute = date(2026, 11, 10)    # Versand 3 Tage vor Anreise
-        erwartet = {"90001": "anzahlung", "90002": "rest", "90003": "anzahlung", "90004": "gesamt", "90006": None, "90007": "rest"}
+        erwartet = {"90001": "anzahlung", "90002": "rest", "90003": "anzahlung", "90004": "gesamt", "90006": "bezahlt", "90007": "rest"}
         for reg, var in erwartet.items():
             z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer=?", (reg,)).fetchone()
             d = mail_daten(z, k, q, heute)
             assert zahlung_variante(d) == var, (reg, zahlung_variante(d))
             h = render_mail(d)["html"]
-            assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var is not None), reg
+            assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var not in (None, "bezahlt")), reg
+            assert ("komplett bezahlt" in h or "paid in full" in h) == (var == "bezahlt"), reg
+            ota = reg == "90004"       # Kanal BHC
+            assert ("Buchungsplattform" in h or "booking platform" in h) == ota, reg
             assert ("läuft morgen ab" in h) == (d.anreise == date(2026, 11, 13) and d.sprache == "de"), reg
             assert "{{" not in h
         # Felder
@@ -528,6 +531,34 @@ def test_import_felder():
     z = _zeile_lesen({"RegNummer": "1", "Email": "a@b.de", "Anreise": "09.10.26 00:00", "Abreise": "11.10.26 00:00",
                       "Vorname": "Berlin", "Stadt": "Berlin", "Postleitzahl": "10437"})
     assert z["vorname"] is None and z["sprache"] == "de" and "strasse" not in z and "stadt" not in z
+
+
+
+
+def test_bezahlt_und_ota():
+    """Komplett bezahlt: Bereich ohne Button; OTA-Buchung: anderer Nichtanreise-Satz."""
+    from render import komplett_bezahlt, ota_buchung
+    bez = dict(paymentlink=None, voraus_datum=None, schon_eingegangen=103.6, zahlbetrag=103.6, restbetrag=None)
+    for sprache, text in (("de", "Deine Buchung ist bereits komplett bezahlt."), ("en", "Your booking has already been paid in full.")):
+        for kanal in (None, "EGB", "BHC", "EHC"):
+            d = (daten(sprache=sprache, kanal=kanal, **bez))
+            assert zahlung_variante(d) == "bezahlt"
+            h = render_mail(d)["html"]
+            assert text in h and "pay.example" not in h and "Jetzt bezahlen" not in h and "Pay now" not in h
+            assert "§" not in h and "&sect;" not in h          # kein AGB-Satz
+    # nicht komplett bezahlt: kein Bereich
+    for abw in (dict(zahlbetrag=None), dict(schon_eingegangen=None), dict(restbetrag=20.0), dict(zahlbetrag=0.0)):
+        d = (daten(**{**bez, **abw}))
+        assert zahlung_variante(d) is None and not komplett_bezahlt(d), abw
+        assert "<h3" in render_mail(d)["html"] and "komplett bezahlt" not in render_mail(d)["html"]
+    # Direkt (EGB/leer) vs. OTA
+    for kanal, ota in ((None, False), ("EGB", False), ("BHC", True), ("EHC", True), ("TRIP", True)):
+        d = (daten(kanal=kanal))
+        assert ota_buchung(d) == ota
+        h_de = render_mail(d)["html"]
+        assert ("Buchungsplattform" in h_de) == ota and ("sag uns bitte kurz Bescheid" in h_de) == (not ota)
+        h_en = render_mail((daten(kanal=kanal, sprache="en")))["html"]
+        assert ("booking platform" in h_en) == ota and ("please let us know" in h_en) == (not ota)
 
 
 if __name__ == "__main__":

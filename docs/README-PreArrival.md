@@ -53,7 +53,7 @@ Bei einer späteren Zahlungserinnerung bewusst anders formulieren, sonst wird si
 
 Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BLOCK:name:END -->`. Der Job entfernt nicht benötigte Blöcke samt Markern. Nach dem Rendern bleiben weder Kommentare noch Platzhalter übrig, sonst bricht der Versand für diesen Gast mit einem Fehler ab.
 
-**Bereich „Stimmt alles?“** ist für alle Gäste gleich: „Schau kurz drüber, ob Datum und Personenzahl passen. [Frist-Satz] Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ Für alle Buchungen der Liste gilt die kostenfreie Stornierung bis `STORNO_TAGE` (Standard 2) Tage vor Anreise. Der Frist-Satz richtet sich nach dem Versandtag, damit er nie falsch ist:
+**Bereich „Stimmt alles?“** ist bis auf den letzten Satz für alle Gäste gleich (der Nichtanreise-Satz unterscheidet Direkt- und OTA-Buchung, siehe unten): „Schau kurz drüber, ob Datum und Personenzahl passen. [Frist-Satz] Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ Für alle Buchungen der Liste gilt die kostenfreie Stornierung bis `STORNO_TAGE` (Standard 2) Tage vor Anreise. Der Frist-Satz richtet sich nach dem Versandtag, damit er nie falsch ist:
 
 | Block | Wann | Text |
 |---|---|---|
@@ -62,15 +62,18 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 | `storno_datum` | Frist endet später | „… läuft am *Mi, 7. Okt* ab.“ |
 | (keiner) | Frist schon abgelaufen | der Satz entfällt |
 
-**Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint nur, wenn die CSV einen `Paylink` enthält. Der Einleitungssatz hängt vom Zahlstand ab (Reihenfolge der Prüfung):
+**Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint, wenn die CSV einen `Paylink` enthält, oder (ohne Paylink) wenn die Buchung komplett bezahlt ist. Der Einleitungssatz hängt vom Zahlstand ab (Reihenfolge der Prüfung):
 
 | Block | Wann | Text (DE) |
 |---|---|---|
 | `zahlung_rest` | `Schon_eingegangen` > 0 (auch ohne `Vorausdatum_1`, ohne Vergleich mit `Vorauszahlung_1`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
 | `zahlung_anzahlung` | sonst, `Vorausdatum_1` gesetzt **oder** (Sonderfall, 12.11.2026) Kanal `EGB` und Rate `FLEX` (Buchung über die Website, Anzahlung fällig, auch ohne Vorausdatum) | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
+| `zahlung_bezahlt` | kein Paylink, aber komplett bezahlt: `Zahlbetrag` > 0, `Schon_eingegangen` > 0 und `Restbetrag` leer/0; egal welcher Kanal | „Deine Buchung ist bereits komplett bezahlt.“ (ohne Button, ohne Hinweis zu Zahlungsarten, ohne AGB-Satz) |
 | `zahlung_gesamt` | sonst (kein Vorausdatum) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
 
 Kanal und Rate zählen nur für den Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext, solange noch nichts eingegangen ist); sonst keine Rolle (auch `@guest.booking.com` bekommt den Zahlungsbereich, sobald ein Paylink da ist). Betrag und Frist stehen nicht in der Mail. Ist `Restbetrag` offen, aber kein Paylink da, entfällt der Zahlungsbereich und das Log enthält eine Warnung; bei Paylink mit Restbetrag 0 wird der Bereich trotzdem angezeigt (ebenfalls Warnung). `RATE_STANDARD` und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
+
+**Nichtanreise-Satz** (letzter Satz im Bereich „Stimmt alles?“): Direktbuchung (Kanal `EGB` oder leer) bekommt „Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ OTA-Buchung (jeder andere Kanal, z. B. `BHC`, `EHC`) bekommt „Falls Du nicht kommen kannst, geh bitte zur entsprechenden Buchungsplattform und storniere dort Deine Buchung. Wir werden dann von der Plattform automatisch darüber informiert.“ (Blöcke `nichtanreise_direkt` und `nichtanreise_ota`; EN ist meine Übersetzung, noch nicht geprüft.)
 
 ## Anrede
 
@@ -134,6 +137,8 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Hinweise an ASSD zur CSV notiert und erledigt: letzte leere Spalte `Paylink` kann fehlen (25 statt 26 Felder, harmlos), `BHC` zusammen mit `FLEX` sollte nicht vorkommen
 - CSV-Abfrage bei ASSD: alle Anreisen von heute bis heute + 3 Tage (deckt Kurzfristbuchungen ab, 10.11.2026); Beispiel-CSV geprüft, 21 Paylinks, keine Warnungen
 - Import abgesichert: Hat eine Zeile mehr gefüllte Felder als die Kopfzeile Spalten (z. B. fehlt `Paylink` in der Kopfzeile), bricht der Import ab, die Mail bleibt ungelesen und es wird nichts importiert. Zeilen ganz ohne E-Mail-Adresse (z. B. Buchung vor Ort) zählen nur als Hinweis, nicht als Fehler (der frühere „Importfehler Zeile #5“)
+- Neues CSV-Format und Zahlungstexte inkl. Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext) in den Vorschauen geprüft und in Ordnung (12.11.2026)
+- Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Cronjob auf dem NAS läuft, Vorschauen werden erstellt
 - Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
@@ -141,10 +146,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 ## Offen
 
-1. **Neue CSV prüfen:** Sobald eine echte CSV im neuen Format vorliegt, Vorschau ansehen (Anzahlung-, Rest- und Gesamttext).
-2. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-3. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
-4. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
-5. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
-6. **Nichtanreisetext anpassen:** Der Satz zur Nichtanreise im Bereich „Stimmt alles?“ („Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – …“) soll zwischen Direktbuchung (Kanal `EGB`) und OTA-Buchung (z. B. `BHC`, `EHC`) unterscheiden. Zu klären: Wortlaut je Fall (z. B. bei OTA Hinweis auf Stornierung über das Portal statt per Antwort-Mail, da die Antwort an die Weiterleitungsadresse nicht beim Hostel ankommt), Behandlung von Buchungen ohne Kanal (vor Ort/Telefon) und ob die Rate `OTA` oder der Kanal das Kriterium ist. *(aufgenommen am 09.11.2026)*
-7. **Zahlungsbereich auch bei vollständig bezahlten Buchungen?** Überlegen, ob der Bereich „Zahlung“ auch erscheinen soll, wenn alles bezahlt ist (kein Paylink), nur mit einem Bestätigungstext, dass bereits bezahlt wurde, ohne Button. Zu klären: Wortlaut (DE/EN), ob das für alle Gäste gilt (auch Portalbuchungen, bei denen das Portal kassiert, oder Buchungen vor Ort), und woran „vollständig bezahlt“ erkannt wird. Bisher bedeutet ein leerer Paylink „bezahlt“, aber auch „Zahlung nicht erforderlich“ oder fehlende Daten. Ein Bestätigungstext sollte nur kommen, wenn sicher bezahlt wurde (z. B. `Zahlbetrag` gefüllt und `Restbetrag` = 0; mit dem neuen CSV-Format jetzt zuverlässig erkennbar). *(aufgenommen am 09.11.2026)*
+1. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
+2. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
+3. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
+4. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
