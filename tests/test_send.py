@@ -369,7 +369,7 @@ _ZEILEN_NEU = [
     "     90001;;111;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-11-02;1;Anna;Test;Weg 5;10119;Ort;a@example.com;E;;;134.82;2026-11-11;0.00;134.82;134.82;https://pay.example/1",
     # 90002: Vorauszahlung bezahlt, Rest offen -> Rest (Buchung vor Ort/Telefon: Buchungsnummer leer)
     "     90002;;222;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-10-10;11;Bea;Test;Str 8;02977;Ort;b@example.com;D;;;364.60;2026-11-12;364.60;20;384.60;https://pay.example/2",
-    # 90003: EGB/FLEX, keine Vorauszahlung (Datum 0000-00-00) -> Gesamt
+    # 90003: EGB/FLEX, kein Vorausdatum, nichts bezahlt -> Anzahlung (Sonderfall Website-Flex)
     "     90003;410200-20-1;I01;2026-11-13 00:00:00;2026-11-15 00:00:00;2026-07-01;2;Carl;Test;Str 1;86637;Ort;c@example.com;D;EGB;FLEX;0.00;0000-00-00;0.00;179;179.00;https://pay.example/3",
     # 90004: zwei Adressen im Feld Email -> die erste gilt; Portal, Gesamt
     "     90004;5000000004;IBOO4;2026-11-14 00:00:00;2026-11-15 00:00:00;2026-10-17;5;Dora;Test;Str 2;;Ort;d@example.com, d2@example.com;D;BHC;OTA;0.00;0000-00-00;0.00;155.23;155.23;https://pay.example/4",
@@ -398,7 +398,7 @@ def test_csv_2026_11():
         q = ev.EventQuelle("")
         k = SendKonfig()
         heute = date(2026, 11, 10)    # Versand 3 Tage vor Anreise
-        erwartet = {"90001": "anzahlung", "90002": "rest", "90003": "gesamt", "90004": "gesamt", "90006": None, "90007": "rest"}
+        erwartet = {"90001": "anzahlung", "90002": "rest", "90003": "anzahlung", "90004": "gesamt", "90006": None, "90007": "rest"}
         for reg, var in erwartet.items():
             z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer=?", (reg,)).fetchone()
             d = mail_daten(z, k, q, heute)

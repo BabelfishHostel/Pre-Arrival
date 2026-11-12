@@ -97,24 +97,28 @@ class MailDaten:
     paymentlink: Optional[str] = None       # leer = alles bezahlt, kein Zahlungsbereich
     voraus_datum: Optional[date] = None     # gesetzt = Vorauszahlung nötig (CSV Vorausdatum_1)
     schon_eingegangen: Optional[float] = None   # bisher bezahlt (CSV Schon_eingegangen), leer = 0
+    kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
+    rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
 
 
 def zahlung_variante(d: MailDaten) -> Optional[str]:
     """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest' oder 'gesamt'.
 
-    Die Zahlungslogik liegt bei ASSD (Spalten der CSV); Kanal und Rate spielen keine Rolle.
+    Die Zahlungslogik liegt weitgehend bei ASSD (Spalten der CSV); Kanal und Rate zählen nur
+    für den Sonderfall Website-Flex (siehe 'anzahlung').
 
     * Kein Paylink (alles bezahlt): kein Bereich.
     * Schon etwas bezahlt (Schon_eingegangen > 0): 'rest' (Restbetrag offen).
-    * Noch nichts bezahlt, aber Vorauszahlung nötig (Vorausdatum gesetzt): 'anzahlung'.
+    * Noch nichts bezahlt, aber Vorauszahlung nötig: 'anzahlung'. Das gilt, wenn Vorausdatum gesetzt ist
+      ODER (Sonderfall) die Buchung über die eigene Website kommt (Kanal EGB) und die Rate FLEX ist.
     * Sonst: 'gesamt' (keine Anzahlung nötig, Buchung kann im Voraus bezahlt werden).
     """
     if not d.paymentlink:
         return None
     if (d.schon_eingegangen or 0) > 0:
         return "rest"
-    if d.voraus_datum is not None:
+    if d.voraus_datum is not None or (d.kanal == "EGB" and d.rate == "flex"):
         return "anzahlung"
     return "gesamt"
 

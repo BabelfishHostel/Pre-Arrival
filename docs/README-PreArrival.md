@@ -26,8 +26,8 @@ Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enth�
 | `Vorname` | Anrede |
 | `Email` | Empfänger; stehen mehrere Adressen im Feld, gilt nur die erste |
 | `Sprache` | `D` → Deutsch, `E` → Englisch |
-| `Kanal` | `EGB`, `BHC`, `EHC`, leer = vor Ort/Telefon; wird gespeichert, steuert aber keinen Text mehr |
-| `Rate` | wird gespeichert, steuert keinen Text mehr |
+| `Kanal` | `EGB` (Website), `BHC`, `EHC`, leer = vor Ort/Telefon; steuert nur den Sonderfall Website-Flex |
+| `Rate` | `FLEX` (beginnt mit „flex“) zählt zusammen mit Kanal `EGB` als Anzahlung fällig; alles andere ohne Wirkung |
 | `Vorauszahlung_1` | geforderte Vorauszahlung (kann manuell für die Paylink-Erstellung gesetzt sein); wird gespeichert, nicht im Mailtext angezeigt |
 | `Vorausdatum_1` | Datum, bis zu dem die Vorauszahlung fällig ist; immer gesetzt, wenn eine Vorauszahlung nötig ist; `0000-00-00` = nicht gesetzt |
 | `Schon_eingegangen` | bisher bezahlter Betrag |
@@ -67,10 +67,10 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 | Block | Wann | Text (DE) |
 |---|---|---|
 | `zahlung_rest` | `Schon_eingegangen` > 0 (auch ohne `Vorausdatum_1`, ohne Vergleich mit `Vorauszahlung_1`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
-| `zahlung_anzahlung` | sonst, `Vorausdatum_1` gesetzt | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
+| `zahlung_anzahlung` | sonst, `Vorausdatum_1` gesetzt **oder** (Sonderfall, 12.11.2026) Kanal `EGB` und Rate `FLEX` (Buchung über die Website, Anzahlung fällig, auch ohne Vorausdatum) | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
 | `zahlung_gesamt` | sonst (kein Vorausdatum) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
 
-Kanal und Rate spielen keine Rolle mehr (auch `@guest.booking.com` bekommt den Zahlungsbereich, sobald ein Paylink da ist). Betrag und Frist stehen nicht in der Mail. Ist `Restbetrag` offen, aber kein Paylink da, entfällt der Zahlungsbereich und das Log enthält eine Warnung; bei Paylink mit Restbetrag 0 wird der Bereich trotzdem angezeigt (ebenfalls Warnung). `RATE_STANDARD` und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
+Kanal und Rate zählen nur für den Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext, solange noch nichts eingegangen ist); sonst keine Rolle (auch `@guest.booking.com` bekommt den Zahlungsbereich, sobald ein Paylink da ist). Betrag und Frist stehen nicht in der Mail. Ist `Restbetrag` offen, aber kein Paylink da, entfällt der Zahlungsbereich und das Log enthält eine Warnung; bei Paylink mit Restbetrag 0 wird der Bereich trotzdem angezeigt (ebenfalls Warnung). `RATE_STANDARD` und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
 
 ## Anrede
 

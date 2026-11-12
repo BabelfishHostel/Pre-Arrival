@@ -97,6 +97,7 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
         events_html=events.html(anreise, sprache),
         paymentlink=z["paylink"],
         voraus_datum=date.fromisoformat(z["vorausdatum"]) if z["vorausdatum"] else None,
+        kanal=(z["kanal"] or "").strip().upper() or None, rate=z["rate"],
         schon_eingegangen=z["schon_eingegangen"],
         storno_tage=k.storno_tage,
     )
