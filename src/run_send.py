@@ -47,7 +47,6 @@ class SendKonfig:
     postfach: str = ""                      # Graph-Postfach, Standard = absender
     tage_vorher: int = 3
     sprache_standard: str = "de"
-    rate_standard: str = "fix"              # nur FLEX löst den Anzahlungstext aus
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
     vorschau_dir: Optional[Path] = None
 
@@ -75,16 +74,16 @@ def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungese
     return [z for z in zeilen if z["m_status"] in (None, "geplant", "fehler")]
 
 
-def zahlung_hinweis(z: sqlite3.Row, rate_standard: str = "fix") -> Optional[str]:
-    """Hinweistext (ohne Personendaten) bei unklaren Zahlungsdaten, sonst None.
+def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
+    """Hinweistext (ohne Personendaten) bei widersprüchlichen Zahlungsdaten, sonst None.
 
-    Kanal EGB + Rate FLEX mit Paylink, aber ohne Betrag (amou1) oder Gesamtpreis (total): Anzahlung, Rest
-    oder Gesamt sind nicht entscheidbar, der Zahlungsbereich entfällt, die Mail geht ohne ihn raus.
+    Die Mail geht in jedem Fall raus; die Entscheidung über den Zahlungsbereich fällt allein am Paylink.
     """
-    rate = z["rate"] or rate_standard
-    if z["paylink"] and (z["kanal"] or "").upper() == "EGB" and rate == "flex" \
-            and (z["betrag"] is None or z["gesamtbetrag"] is None):
-        return "Paylink, aber Betrag oder Gesamtpreis fehlt - Zahlungsbereich entfällt"
+    rest = z["restbetrag"] or 0
+    if z["paylink"] and rest <= 0:
+        return "Paylink, aber Restbetrag 0 - Zahlungsbereich wird trotzdem angezeigt"
+    if not z["paylink"] and rest > 0:
+        return "Restbetrag offen, aber kein Paylink - Zahlungsbereich entfällt"
     return None
 
 
@@ -94,9 +93,11 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
     return MailDaten(
         vorname=z["vorname"], buchungsnummer=z["buchungsnummer"] or z["reg_nummer"],
         anreise=anreise, abreise=date.fromisoformat(z["abreise"]), personen=z["anzahl_personen"],
-        sprache=sprache, rate=z["rate"] or k.rate_standard, kanal=z["kanal"], heute=heute,
+        sprache=sprache, heute=heute,
         events_html=events.html(anreise, sprache),
-        betrag=z["betrag"], gesamtbetrag=z["gesamtbetrag"], paymentlink=z["paylink"],
+        paymentlink=z["paylink"],
+        voraus_datum=date.fromisoformat(z["vorausdatum"]) if z["vorausdatum"] else None,
+        schon_eingegangen=z["schon_eingegangen"],
         storno_tage=k.storno_tage,
     )
 
@@ -143,7 +144,7 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: ungültige E-Mail-Adresse")
             continue
-        hinweis = zahlung_hinweis(z, k.rate_standard)
+        hinweis = zahlung_hinweis(z)
         if hinweis:
             erg.details.append(f"{ref}: {hinweis}")
             log.warning("%s: %s", ref, hinweis)
@@ -164,8 +165,7 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             if k.vorschau_dir:
                 k.vorschau_dir.mkdir(parents=True, exist_ok=True)
                 (k.vorschau_dir / f"{z['reg_nummer']}_{d.sprache}.html").write_text(mail["html"], encoding="utf-8")
-            log.info("TROCKENLAUF %s: %s, Rate=%s, Zahlung=%s", ref, d.sprache.upper(),
-                     d.rate, zahlung_variante(d) or "nein")
+            log.info("TROCKENLAUF %s: %s, Zahlung=%s", ref, d.sprache.upper(), zahlung_variante(d) or "nein")
             continue
 
         empfaenger = test_an if modus == "test" else z["email"]
@@ -197,12 +197,11 @@ def lese_konfig() -> SendKonfig:
         absender=e("SEND_ABSENDER", "info@babelfish-hostel.de"),
         tage_vorher=int(e("SEND_TAGE_VORHER", "3")),
         sprache_standard=e("SPRACHE_STANDARD", "de").lower(),
-        rate_standard=e("RATE_STANDARD", "fix").lower(),
         storno_tage=int(e("STORNO_TAGE", "2")),
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
-    if k.sprache_standard not in ("de", "en") or k.rate_standard not in ("flex", "fix"):
-        raise RuntimeError("SPRACHE_STANDARD muss de/en, RATE_STANDARD flex/fix sein.")
+    if k.sprache_standard not in ("de", "en"):
+        raise RuntimeError("SPRACHE_STANDARD muss de oder en sein.")
     return k
 
 

@@ -29,8 +29,8 @@ ANREISE = date(2026, 10, 9)
 
 def daten(**kw) -> MailDaten:
     basis = dict(vorname="Nico", buchungsnummer="410200-20-12058", anreise=ANREISE, abreise=date(2026, 10, 11),
-                 personen=4, sprache="de", rate="flex", kanal="EGB", heute=HEUTE, events_html="<p>EVT</p>",
-                 betrag=528.0, gesamtbetrag=528.0, paymentlink="https://pay.example/x?a=1&b=2")
+                 personen=4, sprache="de", heute=HEUTE, events_html="<p>EVT</p>",
+                 paymentlink="https://pay.example/x?a=1&b=2", voraus_datum=date(2026, 10, 5), schon_eingegangen=None)
     basis.update(kw)
     return MailDaten(**basis)
 
@@ -69,12 +69,12 @@ def test_bloecke():
                       "You have already paid a deposit, so your booking is guaranteed. You can use the following payment link to pay the remaining balance."),
              "gesamt": ("Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.",
                         "Your booking is guaranteed. You can use the following payment link to pay for your booking in advance.")}
+    # Entscheidung allein aus Paylink, Vorausdatum und Schon_eingegangen (Kanal und Rate spielen keine Rolle)
     faelle = {
-        "anzahlung": [dict(), dict(betrag=700.0, gesamtbetrag=528.0)],          # nichts bezahlt (auch bei amou1 > total)
-        "rest": [dict(betrag=300.0, gesamtbetrag=528.0)],
-        "gesamt": [dict(kanal="BHC"), dict(kanal=None, betrag=None, gesamtbetrag=None), dict(kanal=""),
-                   dict(rate="fix"), dict(rate=None), dict(kanal="BHC", rate="flex"),
-                   dict(rate="fix", betrag=300.0, gesamtbetrag=528.0)],
+        "anzahlung": [dict(), dict(schon_eingegangen=0.0)],                      # Vorauszahlung nötig, nichts bezahlt
+        "rest": [dict(schon_eingegangen=20.0),                                   # schon etwas bezahlt
+                 dict(schon_eingegangen=5.0, voraus_datum=None)],                # auch ohne Vorausdatum
+        "gesamt": [dict(voraus_datum=None), dict(voraus_datum=None, schon_eingegangen=0.0)],
     }
     for variante, liste in faelle.items():
         for kw in liste:
@@ -86,16 +86,15 @@ def test_bloecke():
                     assert andere == variante or t[i] not in h
                 assert (("AGB" in h or "General Terms" in h) == (variante == "anzahlung")), (variante, kw, sprache)
                 assert "{{" not in h and "BLOCK:" not in h and "528" not in h   # Betrag steht nicht in der Mail
-    # Kein Paylink -> kein Zahlungsbereich; EGB+FLEX ohne Betrag/total ist nicht entscheidbar -> kein Bereich
-    for kw in ({"betrag": None}, {"gesamtbetrag": None}, {"paymentlink": None}, {"paymentlink": ""}):
+    # Kein Paylink (alles bezahlt) -> kein Zahlungsbereich, egal was sonst in der CSV steht
+    for kw in ({"paymentlink": None}, {"paymentlink": ""}, {"paymentlink": None, "schon_eingegangen": 50.0},
+               {"paymentlink": None, "voraus_datum": None}):
         d = daten(**kw)
         assert not zahlung_aktiv(d) and "Jetzt bezahlen" not in render_mail(d)["html"], kw
-    # ohne Total/Betrag, aber nicht EGB+FLEX: Paylink genügt
-    assert zahlung_variante(daten(kanal="BHC", betrag=None, gesamtbetrag=None)) == "gesamt"
     # Keine Marker/Platzhalter/Entwicklerkommentar im Ergebnis
-    for r in ("flex", "fix"):
+    for r in (None, 0.0, 20.0):
         for s in ("de", "en"):
-            m = render_mail(daten(rate=r, sprache=s))
+            m = render_mail(daten(schon_eingegangen=r, sprache=s))
             assert "<!--" not in m["html"] and "Elemente sonst" not in m["text"]
             assert "BLOCK:" not in m["html"] and "{{" not in m["html"] and "HINWEISE" not in m["html"]
             assert "EVT" in m["html"] and "410200-20-12058" in m["html"] and m["text"].strip()
@@ -306,7 +305,9 @@ def test_migration():
                            " anzahl_personen INTEGER, kanal TEXT, sprache TEXT, import_id INTEGER, erstmals_importiert TEXT NOT NULL,"
                            " zuletzt_gesehen TEXT NOT NULL);")
         init_db(conn)
-        assert "rate" in {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
+        spalten = {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
+        assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag"} <= spalten
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
         init_db(conn)  # idempotent
         conn.close()
 
@@ -353,73 +354,37 @@ def test_graph():
 
 def test_zahlung_hinweis():
     from run_send import zahlung_hinweis
-    z = lambda **kw: {"paylink": "https://p", "betrag": 10.0, "gesamtbetrag": 10.0, "kanal": "EGB", "rate": "flex", **kw}
+    z = lambda **kw: {"paylink": "https://p", "restbetrag": 10.0, **kw}
     assert zahlung_hinweis(z()) is None
-    assert "fehlt" in zahlung_hinweis(z(betrag=None)) and "fehlt" in zahlung_hinweis(z(gesamtbetrag=None))
-    assert zahlung_hinweis(z(betrag=None, paylink=None)) is None            # bezahlt: keine Warnung
-    assert zahlung_hinweis(z(betrag=None, kanal="BHC")) is None             # Gesamt braucht keinen Betrag
-    assert zahlung_hinweis(z(gesamtbetrag=None, rate="fix")) is None
-    assert zahlung_hinweis(z(gesamtbetrag=None, rate=None), "flex") is not None  # RATE_STANDARD=flex
+    assert zahlung_hinweis(z(paylink=None, restbetrag=None)) is None        # bezahlt
+    assert zahlung_hinweis(z(paylink=None, restbetrag=0.0)) is None
+    assert "Restbetrag 0" in zahlung_hinweis(z(restbetrag=None))            # Link, aber nichts offen
+    assert "kein Paylink" in zahlung_hinweis(z(paylink=None))               # offen, aber kein Link
 
 
-NEUE_CSV_2026_11 = (
-    "RegNummer;Buchungsnummer;Ident;Anreise;Abreise;Buchungsdatum;AnzahlPersonen;Vorname;Nachname;Strasse;Postleitzahl;"
-    "Stadt;Email;Sprache;Kanal;Rate;Anzahlung;Anzahlung_bis;total;desc1;amou1;desc2;amou2;desc3;amou3;Paylink\r\n"
-    "     90001;6000000001;111;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-10-21;1;Anna;Test;Weg 5, 12345 Ort;;Ort;a@example.com;D;BHC;FLEX;26.90;0000-00-00;26.90;;26.90;;0.00;;0.00;https://pay.example/1\r\n"
-    "     90002;;222;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-11-03;1;Bea;Test;Str 8;93437;Ort;b@example.com;D;;;22.90;2026-11-08;22.90;;22.90;;0.00;;0.00;https://pay.example/2\r\n"
-    "     90003;410200-20-1;I01;2026-11-10 00:00:00;2026-11-12 00:00:00;2026-07-08;1;Carl;Test;Str 1;12055;Ort;c@example.com;D;EGB;FLEX;0.00;0000-00-00;173.80;;173.80;;0.00;;0.00;https://pay.example/3\r\n"
-    "     90004;410200-20-2;I02;2026-11-10 00:00:00;2026-11-12 00:00:00;2026-07-08;1;Dora;Test;Str 1;12055;Ort;d@example.com;D;EGB;FLEX;66.99;0000-00-00;173.80;;100.00;;0.00;;0.00;https://pay.example/4\r\n"
-    "     90005;410200-20-3;I03;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-11-03;1;Emil;Test;Str 2;F92;Ort;e@example.com;E;EGB;FLEX;66.99;0000-00-00;;;;;;;\r\n"
-    "     90006;5000000006;IBOO6;2026-11-10 00:00:00;2026-11-11 00:00:00;2026-10-23;1;Fia;Test;Str 3;97816;Ort;f.1@guest.booking.com;D;BHC;OTA;0.00;0000-00-00;52.92;;52.92;;0.00;;0.00;https://pay.example/6\r\n"
-    "\r\n"
-)
-
-
-def test_csv_schutz():
-    """Kopfzeile ohne Paylink: Abbruch statt stillem Verlust; Zeile ohne E-Mail ist nur ein Hinweis."""
-    from csv_import import ImportFehler, importiere_csv
-    kopf_ohne = NEUE_CSV_2026_11.split("\r\n")[0].rsplit(";Paylink", 1)[0]
-    zeilen = NEUE_CSV_2026_11.split("\r\n")[1:]
-    with tempfile.TemporaryDirectory() as tmp:
-        conn = verbinde(Path(tmp) / "s.sqlite")
-        init_db(conn)
-        # 1. Paylink-Feld vorhanden, aber nicht in der Kopfzeile -> nichts importiert, nichts vermerkt
-        pfad = Path(tmp) / "a.csv"
-        pfad.write_bytes(("\r\n".join([kopf_ohne] + zeilen)).encode("utf-8"))
-        try:
-            importiere_csv(conn, pfad)
-            raise AssertionError("ImportFehler erwartet")
-        except ImportFehler as exc:
-            assert "mehr als die Kopfzeile" in str(exc) and "Paylink" in str(exc)
-        assert conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM import_log").fetchone()[0] == 0
-        # 2. Nur leere Zusatzfelder (kein gefülltes Feld über die Kopfzeile hinaus) -> kein Abbruch
-        pfad.write_bytes(("\r\n".join([kopf_ohne] + [z.rsplit(";", 1)[0] + ";" if z.strip() else z for z in zeilen])).encode("utf-8"))
-        e = importiere_csv(conn, pfad)
-        assert e.gesamt == 6 and e.fehler == 0 and e.ohne_email == 0, e
-    with tempfile.TemporaryDirectory() as tmp:
-        conn = verbinde(Path(tmp) / "t.sqlite")
-        init_db(conn)
-        # 3. Normale CSV: Zeile ohne E-Mail zählt als Hinweis, nicht als Fehler; ungültige Adresse bleibt Fehler
-        pfad = Path(tmp) / "b.csv"
-        text = NEUE_CSV_2026_11.replace("b@example.com", "kaputt").replace(";e@example.com;", ";;")
-        pfad.write_bytes(text.encode("utf-8"))
-        e = importiere_csv(conn, pfad)
-        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (6, 4, 1, 1), e
-        assert "keine E-Mail" in e.hinweise[0] and "kaputt" in e.fehler_details[0]
-        # 4. Nur Zeilen ohne E-Mail: kein ImportFehler
-    with tempfile.TemporaryDirectory() as tmp:
-        conn = verbinde(Path(tmp) / "u.sqlite")
-        init_db(conn)
-        pfad = Path(tmp) / "c.csv"
-        nur = NEUE_CSV_2026_11.split("\r\n")
-        pfad.write_bytes("\r\n".join([nur[0], nur[5].replace(";e@example.com;", ";;")]).encode("utf-8"))
-        e = importiere_csv(conn, pfad)
-        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (1, 0, 0, 1), e
+KOPF_NEU = ("RegNummer;Buchungsnummer;Ident;Anreise;Abreise;Buchungsdatum;AnzahlPersonen;Vorname;Nachname;Strasse;Postleitzahl;"
+            "Stadt;Email;Sprache;Kanal;Rate;Vorauszahlung_1;Vorausdatum_1;Schon_eingegangen;Restbetrag;Zahlbetrag;Paylink")
+_ZEILEN_NEU = [
+    # 90001: Vorauszahlung nötig, nichts bezahlt -> Anzahlung (Kanal und Rate leer)
+    "     90001;;111;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-11-02;1;Anna;Test;Weg 5;10119;Ort;a@example.com;E;;;134.82;2026-11-11;0.00;134.82;134.82;https://pay.example/1",
+    # 90002: Vorauszahlung bezahlt, Rest offen -> Rest (Buchung vor Ort/Telefon: Buchungsnummer leer)
+    "     90002;;222;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-10-10;11;Bea;Test;Str 8;02977;Ort;b@example.com;D;;;364.60;2026-11-12;364.60;20;384.60;https://pay.example/2",
+    # 90003: EGB/FLEX, keine Vorauszahlung (Datum 0000-00-00) -> Gesamt
+    "     90003;410200-20-1;I01;2026-11-13 00:00:00;2026-11-15 00:00:00;2026-07-01;2;Carl;Test;Str 1;86637;Ort;c@example.com;D;EGB;FLEX;0.00;0000-00-00;0.00;179;179.00;https://pay.example/3",
+    # 90004: zwei Adressen im Feld Email -> die erste gilt; Portal, Gesamt
+    "     90004;5000000004;IBOO4;2026-11-14 00:00:00;2026-11-15 00:00:00;2026-10-17;5;Dora;Test;Str 2;;Ort;d@example.com, d2@example.com;D;BHC;OTA;0.00;0000-00-00;0.00;155.23;155.23;https://pay.example/4",
+    # 90005: keine E-Mail, Zeile endet früh (leere Endfelder fehlen)
+    "     90005;;333;2026-11-13 00:00:00;2026-11-16 00:00:00;2026-10-08;1;Emil;Test;;;;;D;;;0.00;0000-00-00;0.00;",
+    # 90006: vollständig bezahlt, kein Paylink, kurze Zeile -> kein Zahlungsbereich
+    "     90006;410200-20-3;I03;2026-11-15 00:00:00;2026-11-19 00:00:00;2026-11-06;1;Fia;Test;Str 3;91052;Ort;f@example.com;D;EGB;NRF;0.00;0000-00-00;103.60;0;103.60",
+    # 90007: schon etwas bezahlt, aber kein Vorausdatum -> Rest
+    "     90007;410200-20-4;I04;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-11-01;1;Gus;Test;Str 4;;Ort;g@example.com;E;EGB;FLEX;0.00;0000-00-00;30.00;20;50.00;https://pay.example/7",
+]
+NEUE_CSV_2026_11 = "\r\n".join([KOPF_NEU] + _ZEILEN_NEU) + "\r\n\r\n"
 
 
 def test_csv_2026_11():
-    """CSV-Format vom 08.11.2026: neue Spalten, Zeile mit 25 statt 26 Feldern (letztes leeres Feld fehlt)."""
+    """CSV-Format ab 12.11.2026: Vorauszahlung_1, Vorausdatum_1, Schon_eingegangen, Restbetrag, Zahlbetrag."""
     from csv_import import importiere_csv
     from run_send import SendKonfig, mail_daten
     with tempfile.TemporaryDirectory() as tmp:
@@ -428,57 +393,68 @@ def test_csv_2026_11():
         conn = verbinde(Path(tmp) / "n.sqlite")
         init_db(conn)
         e = importiere_csv(conn, pfad)
-        assert (e.gesamt, e.neu, e.fehler) == (6, 6, 0), e
+        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (7, 6, 0, 1), e
+        assert "keine E-Mail" in e.hinweise[0]
         q = ev.EventQuelle("")
         k = SendKonfig()
-        heute = date(2026, 11, 7)    # Versand 3 Tage vor Anreise
-        erwartet = {"90001": "gesamt", "90002": "gesamt", "90003": "anzahlung", "90004": "rest", "90005": None, "90006": "gesamt"}
+        heute = date(2026, 11, 10)    # Versand 3 Tage vor Anreise
+        erwartet = {"90001": "anzahlung", "90002": "rest", "90003": "gesamt", "90004": "gesamt", "90006": None, "90007": "rest"}
         for reg, var in erwartet.items():
             z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer=?", (reg,)).fetchone()
             d = mail_daten(z, k, q, heute)
             assert zahlung_variante(d) == var, (reg, zahlung_variante(d))
             h = render_mail(d)["html"]
-            assert "läuft morgen ab" in h or "ends tomorrow" in h
-            assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var is not None)
-        z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90002'").fetchone()
-        assert mail_daten(z, k, q, heute).buchungsnummer == "90002"       # Fallback auf RegNummer
+            assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var is not None), reg
+            assert ("läuft morgen ab" in h) == (d.anreise == date(2026, 11, 13) and d.sprache == "de"), reg
+            assert "{{" not in h
+        # Felder
+        a = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90002'").fetchone()
+        assert (a["vorauszahlung"], a["vorausdatum"], a["schon_eingegangen"], a["restbetrag"], a["zahlbetrag"]) == \
+            (364.6, "2026-11-12", 364.6, 20.0, 384.6)
+        assert mail_daten(a, k, q, heute).buchungsnummer == "90002"        # Fallback auf RegNummer
+        c = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90003'").fetchone()
+        assert c["vorausdatum"] is None and c["vorauszahlung"] is None and c["schon_eingegangen"] is None   # 0000-00-00 / 0.00
+        assert c["rate"] == "flex" and c["kanal"] == "EGB" and c["buchungsnummer"] == "410200-20-1"
+        assert conn.execute("SELECT email FROM arrivals WHERE reg_nummer='90004'").fetchone()["email"] == "d@example.com"
+        assert conn.execute("SELECT sprache FROM arrivals WHERE reg_nummer='90001'").fetchone()["sprache"] == "en"
         assert k.tage_vorher == 3 and k.storno_tage == 2
         conn.close()
 
 
-NEUE_CSV = (
-    "RegNummer;Buchungsnummer;Ident;Anreise;Abreise;Buchungsdatum;AnzahlPersonen;Vorname;Nachname;Strasse;Postleitzahl;"
-    "Stadt;Email;Sprache;Kanal;total;desc1;amou1;desc2;amou2;desc3;Paylink\r\n"
-    "     13724;410200-20-12913;246;2026-10-25 00:00:00;2026-11-01 00:00:00;2026-09-05;1;Lautaro;M;Calle 8;47194;Fuensalda\u00f1a;"
-    "l@example.com;E;EGB;146.25;;146.25;;0.00;;https://hostels.assd.com/wci/pay/AbC-_=\r\n"
-    "     13729;410200-20-13149;378;2026-10-25 00:00:00;2026-10-26 00:00:00;2026-10-19;1;Kerstin;A;;;;k@example.com;D;EGB;18.00;;;;;;\r\n"
-    "\r\n"
-)
-
-
-def test_neue_csv():
-    from csv_import import importiere_csv
+def test_csv_schutz():
+    """Kopfzeile ohne Paylink: Abbruch statt stillem Verlust; Zeile ohne E-Mail ist nur ein Hinweis."""
+    from csv_import import ImportFehler, importiere_csv
+    kopf_ohne = KOPF_NEU.rsplit(";Paylink", 1)[0]
     with tempfile.TemporaryDirectory() as tmp:
-        pfad = Path(tmp) / "a.csv"
-        pfad.write_bytes(NEUE_CSV.encode("utf-8"))
-        conn = verbinde(Path(tmp) / "n.sqlite")
+        conn = verbinde(Path(tmp) / "s.sqlite")
         init_db(conn)
+        # 1. Paylink-Feld vorhanden, aber nicht in der Kopfzeile -> nichts importiert, nichts vermerkt
+        pfad = Path(tmp) / "a.csv"
+        pfad.write_bytes(("\r\n".join([kopf_ohne] + _ZEILEN_NEU)).encode("utf-8"))
+        try:
+            importiere_csv(conn, pfad)
+            raise AssertionError("ImportFehler erwartet")
+        except ImportFehler as exc:
+            assert "gefüllte" in str(exc) and "Paylink" in str(exc)
+        assert conn.execute("SELECT COUNT(*) FROM arrivals").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM import_log").fetchone()[0] == 0
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "t.sqlite")
+        init_db(conn)
+        # 2. Ungültige Adresse bleibt Fehler, fehlende Adresse nur Hinweis
+        pfad = Path(tmp) / "b.csv"
+        pfad.write_bytes(NEUE_CSV_2026_11.replace("b@example.com", "kaputt").encode("utf-8"))
         e = importiere_csv(conn, pfad)
-        assert (e.gesamt, e.neu, e.fehler) == (2, 2, 0), e
-        a = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='13724'").fetchone()
-        assert a["buchungsnummer"] == "410200-20-12913" and a["sprache"] == "en" and a["kanal"] == "EGB"
-        assert a["betrag"] == 146.25 and a["gesamtbetrag"] == 146.25 and a["paylink"].endswith("AbC-_=")
-        b = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='13729'").fetchone()
-        assert b["sprache"] == "de" and b["betrag"] is None and b["paylink"] is None and b["gesamtbetrag"] == 18.0
-        # Versand: echte Buchungsnummer; Lautaro (Paylink + Betrag) bekommt Zahlung, Kerstin (bezahlt) nicht
-        from run_send import SendKonfig, mail_daten
-        q = ev.EventQuelle("")
-        d = mail_daten(a, SendKonfig(), q, date(2026, 10, 23))
-        assert d.buchungsnummer == "410200-20-12913" and d.sprache == "en"
-        assert zahlung_aktiv(d) and "Pay now" in render_mail(d)["html"]
-        d = mail_daten(b, SendKonfig(), q, date(2026, 10, 23))
-        assert not zahlung_aktiv(d) and "Pay now" not in render_mail(d)["html"]
-        conn.close()
+        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (7, 5, 1, 1), e
+        assert "keine E-Mail" in e.hinweise[0] and "kaputt" in e.fehler_details[0]
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "u.sqlite")
+        init_db(conn)
+        # 3. Nur Zeilen ohne E-Mail: kein ImportFehler
+        pfad = Path(tmp) / "c.csv"
+        pfad.write_bytes("\r\n".join([KOPF_NEU, _ZEILEN_NEU[4]]).encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (1, 0, 0, 1), e
 
 
 def test_env_kommentare():

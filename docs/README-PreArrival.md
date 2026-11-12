@@ -16,7 +16,7 @@ Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet ni
 
 ## Datenquelle: die CSV von ASSD
 
-Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enthält seit 10.11.2026 alle Anreisen von heute bis heute + 3 Tage, ein Gast steht also bis zu 4-mal darin (der Import aktualisiert dieselbe `RegNummer`, das Mail-Log erlaubt nur einen Versand pro Gast). Verwendete Spalten (26 Spalten, die letzte ist `Paylink`):
+Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enthält seit 10.11.2026 alle Anreisen von heute bis heute + 3 Tage, ein Gast steht also bis zu 4-mal darin (der Import aktualisiert dieselbe `RegNummer`, das Mail-Log erlaubt nur einen Versand pro Gast). Verwendete Spalten (22 Spalten seit 12.11.2026, die letzte ist `Paylink`; zusätzliche Spalten werden ignoriert, der Import arbeitet über die Kopfzeile):
 
 | Spalte | Verwendung |
 |---|---|
@@ -24,12 +24,15 @@ Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enth�
 | `Buchungsnummer` | die Nummer, die der Gast sieht (z. B. `410200-20-12913`). **Leer bei Buchungen vor Ort oder am Telefon**, dann zeigt die Mail ersatzweise die `RegNummer` (damit die Rezeption die Buchung bei Rückfragen schnell findet, auch wenn der Gast diese Nummer noch nicht kannte). |
 | `Anreise`, `Abreise`, `AnzahlPersonen` | Datumsangaben, Nächte, Gäste |
 | `Vorname` | Anrede |
-| `Email` | Empfänger |
+| `Email` | Empfänger; stehen mehrere Adressen im Feld, gilt nur die erste |
 | `Sprache` | `D` → Deutsch, `E` → Englisch |
-| `Kanal` | `EGB` (eigene Buchungsstrecke), `BHC` (Booking.com), `EHC` (Expedia); leer = Buchung vor Ort oder am Telefon (dann ist auch die `Buchungsnummer` leer) |
-| `amou1`, `Paylink` | offener Restbetrag (total minus bereits gezahlt) und persönlicher Zahlungslink für genau diesen Betrag; **beide leer = bereits bezahlt** |
-| `total` | Buchungssumme; zusammen mit `amou1` entscheidet sie, ob schon etwas gezahlt wurde (`total` = `amou1` → noch nichts bezahlt) |
-| `Rate` | Ratenart, z. B. `FLEX`, `OTA`, `NRF` und weitere. Ausgewertet wird nur `FLEX` (beginnt mit „flex“, Groß-/Kleinschreibung egal); alles andere zählt als „nicht Flex“ |
+| `Kanal` | `EGB`, `BHC`, `EHC`, leer = vor Ort/Telefon; wird gespeichert, steuert aber keinen Text mehr |
+| `Rate` | wird gespeichert, steuert keinen Text mehr |
+| `Vorauszahlung_1` | geforderte Vorauszahlung (kann manuell für die Paylink-Erstellung gesetzt sein); wird gespeichert, nicht im Mailtext angezeigt |
+| `Vorausdatum_1` | Datum, bis zu dem die Vorauszahlung fällig ist; immer gesetzt, wenn eine Vorauszahlung nötig ist; `0000-00-00` = nicht gesetzt |
+| `Schon_eingegangen` | bisher bezahlter Betrag |
+| `Zahlbetrag`, `Restbetrag` | Gesamtbetrag und offener Rest (`Zahlbetrag` − `Schon_eingegangen`); werden gespeichert, nicht angezeigt |
+| `Paylink` | persönlicher Zahlungslink; **leer = kein Zahlungsbereich** |
 
 Adresse, PLZ und Stadt werden nicht gespeichert. Die Stadt dient beim Import nur dazu, einen als Vorname eingetragenen Ortsnamen zu erkennen.
 
@@ -59,15 +62,15 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 | `storno_datum` | Frist endet später | „… läuft am *Mi, 7. Okt* ab.“ |
 | (keiner) | Frist schon abgelaufen | der Satz entfällt |
 
-**Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint, wenn die CSV einen `Paylink` enthält (leer = bezahlt; das entscheidet ASSD beim Erzeugen der CSV). Der Einleitungssatz hängt von Kanal, Rate und Zahlstand ab:
+**Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint nur, wenn die CSV einen `Paylink` enthält. Der Einleitungssatz hängt vom Zahlstand ab (Reihenfolge der Prüfung):
 
 | Block | Wann | Text (DE) |
 |---|---|---|
-| `zahlung_anzahlung` | Kanal `EGB`, Rate `FLEX`, noch nichts bezahlt (`amou1` ≥ `total`) | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
-| `zahlung_rest` | Kanal `EGB`, Rate `FLEX`, Anzahlung geleistet (`amou1` < `total`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
-| `zahlung_gesamt` | alle anderen Gäste mit Paylink (Portale, OTA, Fix, Buchung vor Ort, auch `@guest.booking.com`) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
+| `zahlung_rest` | `Schon_eingegangen` > 0 (auch ohne `Vorausdatum_1`, ohne Vergleich mit `Vorauszahlung_1`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
+| `zahlung_anzahlung` | sonst, `Vorausdatum_1` gesetzt | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
+| `zahlung_gesamt` | sonst (kein Vorausdatum) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
 
-Ohne Rate in der CSV gilt `RATE_STANDARD=fix`, also nie Anzahlung oder Rest. Ist bei Kanal `EGB` und Rate `FLEX` der Paylink gefüllt, aber `amou1` oder `total` leer, ist die Variante nicht entscheidbar: Der Zahlungsbereich entfällt und das Log enthält eine Warnung (die Mail geht trotzdem raus). `Anzahlung` und `Anzahlung_bis` aus der CSV werden nicht verwendet. Zahlungsfrist und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
+Kanal und Rate spielen keine Rolle mehr (auch `@guest.booking.com` bekommt den Zahlungsbereich, sobald ein Paylink da ist). Betrag und Frist stehen nicht in der Mail. Ist `Restbetrag` offen, aber kein Paylink da, entfällt der Zahlungsbereich und das Log enthält eine Warnung; bei Paylink mit Restbetrag 0 wird der Bereich trotzdem angezeigt (ebenfalls Warnung). `RATE_STANDARD` und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
 
 ## Anrede
 
@@ -125,7 +128,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Sprachfeld: kommt jetzt aus der CSV (`Sprache`)
 - Buchungsnummer: eigene Spalte `Buchungsnummer`
 - Logo: Adresse korrigiert (Bestätigungsmail)
-- Zahlungsdaten: `amou1` und `Paylink` aus der CSV, „bezahlt“ = beide leer
+- Zahlungsdaten: seit 12.11.2026 `Vorauszahlung_1`, `Vorausdatum_1`, `Schon_eingegangen`, `Restbetrag`, `Zahlbetrag`, `Paylink` (neues 22-Spalten-Format, Zahlungslogik nur noch nach Paylink/Schon_eingegangen/Vorausdatum, nur erste E-Mail-Adresse; DB-Schema v4, Migration automatisch)
 - Zahlungs- und Storno-Texte (09.11.2026): Zahlungsbereich bei Paylink, Varianten Anzahlung/Rest/Gesamt nach Kanal EGB + Rate FLEX + Zahlstand; „Stimmt alles?“ mit Frist-Satz je nach Versandtag; Spalten `Rate`, `Anzahlung`, `Anzahlung_bis`, `amou3` in der CSV (Import geprüft); Buchungsnummer in der CSV korrigiert; Zahlungsfrist entfällt; Versand 3 Tage vor Anreise
 - Umstellung auf „Anreise in 3 Tagen“ (11/2026): ASSD-CSV, Mailordner, Abfrage und Dateinamen auf dem NAS angepasst; im Projekt war dafür keine Codeänderung nötig (Betreff-Filter „Anreise“ trifft weiterhin, Standard `SEND_TAGE_VORHER=3`)
 - Hinweise an ASSD zur CSV notiert und erledigt: letzte leere Spalte `Paylink` kann fehlen (25 statt 26 Felder, harmlos), `BHC` zusammen mit `FLEX` sollte nicht vorkommen
@@ -138,10 +141,10 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 ## Offen
 
-1. **Rate prüfen:** Sobald ein Flex-Gast (Kanal `EGB`) mit offener Zahlung in der CSV steht, die Vorschau ansehen (Anzahlungstext, bei Teilzahlung Resttext).
+1. **Neue CSV prüfen:** Sobald eine echte CSV im neuen Format vorliegt, Vorschau ansehen (Anzahlung-, Rest- und Gesamttext).
 2. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
 3. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
 4. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
 5. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
 6. **Nichtanreisetext anpassen:** Der Satz zur Nichtanreise im Bereich „Stimmt alles?“ („Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – …“) soll zwischen Direktbuchung (Kanal `EGB`) und OTA-Buchung (z. B. `BHC`, `EHC`) unterscheiden. Zu klären: Wortlaut je Fall (z. B. bei OTA Hinweis auf Stornierung über das Portal statt per Antwort-Mail, da die Antwort an die Weiterleitungsadresse nicht beim Hostel ankommt), Behandlung von Buchungen ohne Kanal (vor Ort/Telefon) und ob die Rate `OTA` oder der Kanal das Kriterium ist. *(aufgenommen am 09.11.2026)*
-7. **Zahlungsbereich auch bei vollständig bezahlten Buchungen?** Überlegen, ob der Bereich „Zahlung“ auch erscheinen soll, wenn alles bezahlt ist (kein Paylink), nur mit einem Bestätigungstext, dass bereits bezahlt wurde, ohne Button. Zu klären: Wortlaut (DE/EN), ob das für alle Gäste gilt (auch Portalbuchungen, bei denen das Portal kassiert, oder Buchungen vor Ort), und woran „vollständig bezahlt“ erkannt wird. Bisher bedeutet ein leerer Paylink „bezahlt“, aber auch „Zahlung nicht erforderlich“ oder fehlende Daten. Ein Bestätigungstext sollte nur kommen, wenn sicher bezahlt wurde (z. B. `total` gefüllt und `amou1` = 0 oder leer). *(aufgenommen am 09.11.2026)*
+7. **Zahlungsbereich auch bei vollständig bezahlten Buchungen?** Überlegen, ob der Bereich „Zahlung“ auch erscheinen soll, wenn alles bezahlt ist (kein Paylink), nur mit einem Bestätigungstext, dass bereits bezahlt wurde, ohne Button. Zu klären: Wortlaut (DE/EN), ob das für alle Gäste gilt (auch Portalbuchungen, bei denen das Portal kassiert, oder Buchungen vor Ort), und woran „vollständig bezahlt“ erkannt wird. Bisher bedeutet ein leerer Paylink „bezahlt“, aber auch „Zahlung nicht erforderlich“ oder fehlende Daten. Ein Bestätigungstext sollte nur kommen, wenn sicher bezahlt wurde (z. B. `Zahlbetrag` gefüllt und `Restbetrag` = 0; mit dem neuen CSV-Format jetzt zuverlässig erkennbar). *(aufgenommen am 09.11.2026)*

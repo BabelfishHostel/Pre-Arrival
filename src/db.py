@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS import_log (
@@ -48,9 +48,14 @@ CREATE TABLE IF NOT EXISTS arrivals (
     sprache             TEXT,               -- 'de' oder 'en'
     rate                TEXT,               -- 'flex' oder 'fix' (leer = unbekannt)
     buchungsnummer      TEXT,               -- Nummer, die der Gast sieht (z. B. 410200-20-12913); leer = vor Ort/Telefon
-    betrag              REAL,               -- offener Zahlbetrag (CSV amou1); leer = bezahlt
-    gesamtbetrag        REAL,               -- Buchungssumme (CSV total)
+    betrag              REAL,               -- veraltet (CSV bis 11/2026: amou1), wird nicht mehr geschrieben
+    gesamtbetrag        REAL,               -- veraltet (CSV bis 11/2026: total), wird nicht mehr geschrieben
     paylink             TEXT,               -- persönliche Zahlungs-URL; leer = bezahlt. NICHT loggen.
+    vorauszahlung       REAL,               -- CSV Vorauszahlung_1 (> 0: Vorauszahlung nötig)
+    vorausdatum         TEXT,               -- CSV Vorausdatum_1 als ISO-Datum; leer/0000-00-00 = keine Vorauszahlung
+    schon_eingegangen   REAL,               -- CSV Schon_eingegangen: bisher bezahlt (leer = 0)
+    restbetrag          REAL,               -- CSV Restbetrag = Zahlbetrag - Schon_eingegangen (leer = 0)
+    zahlbetrag          REAL,               -- CSV Zahlbetrag: Gesamtpreis
     import_id           INTEGER REFERENCES import_log(id),
     erstmals_importiert TEXT    NOT NULL,
     zuletzt_gesehen     TEXT    NOT NULL
@@ -99,7 +104,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.executescript(SCHEMA)
         spalten = {z["name"] for z in conn.execute("PRAGMA table_info(arrivals)")}
         for name, typ in (("rate", "TEXT"), ("buchungsnummer", "TEXT"), ("betrag", "REAL"),
-                          ("gesamtbetrag", "REAL"), ("paylink", "TEXT")):
+                          ("gesamtbetrag", "REAL"), ("paylink", "TEXT"), ("vorauszahlung", "REAL"),
+                          ("vorausdatum", "TEXT"), ("schon_eingegangen", "REAL"), ("restbetrag", "REAL"),
+                          ("zahlbetrag", "REAL")):
             if name not in spalten:  # Migration von älteren Schemata
                 conn.execute(f"ALTER TABLE arrivals ADD COLUMN {name} {typ}")
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

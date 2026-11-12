@@ -137,7 +137,8 @@ def _zeile_lesen(zeile: dict) -> dict:
     reg = (zeile.get("RegNummer") or "").strip()
     if not reg:
         raise ValueError("RegNummer fehlt")
-    email = (zeile.get("Email") or "").strip().lower()
+    # Stehen mehrere Adressen im Feld (z. B. "a@x.de, b@y.de"), gilt die erste.
+    email = re.split(r"[,;\s]+", (zeile.get("Email") or "").strip().lower())[0]
     if not email:
         raise ZeileOhneEmail("keine E-Mail-Adresse, kein Versand")
     if not EMAIL_MUSTER.match(email):
@@ -169,28 +170,34 @@ def _zeile_lesen(zeile: dict) -> dict:
         "sprache": _sprache(zeile),
         "rate": _rate(zeile.get("Rate")),
         "buchungsnummer": (zeile.get("Buchungsnummer") or "").strip() or None,
-        "betrag": _betrag(zeile.get("amou1")),
-        "gesamtbetrag": _betrag(zeile.get("total")),
         "paylink": _paylink(zeile.get("Paylink")),
+        "vorauszahlung": _betrag(zeile.get("Vorauszahlung_1")),
+        "vorausdatum": _datum(zeile.get("Vorausdatum_1")),   # '0000-00-00' und leer -> None
+        "schon_eingegangen": _betrag(zeile.get("Schon_eingegangen")),
+        "restbetrag": _betrag(zeile.get("Restbetrag")),
+        "zahlbetrag": _betrag(zeile.get("Zahlbetrag")),
     }
 
 
 UPSERT = """
 INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise,
-                      buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer, betrag,
-                      gesamtbetrag, paylink, import_id,
+                      buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer,
+                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, import_id,
                       erstmals_importiert, zuletzt_gesehen)
 VALUES (:reg_nummer, :vorname, :nachname, :email, :anreise, :abreise,
-        :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer, :betrag,
-        :gesamtbetrag, :paylink, :import_id, :jetzt, :jetzt)
+        :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer,
+        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag,
+        :import_id, :jetzt, :jetzt)
 ON CONFLICT(reg_nummer) DO UPDATE SET
     vorname = excluded.vorname,           nachname = excluded.nachname,
     email = excluded.email,               anreise = excluded.anreise,
     abreise = excluded.abreise,           buchungsdatum = excluded.buchungsdatum,
     anzahl_personen = excluded.anzahl_personen, kanal = excluded.kanal,
     sprache = excluded.sprache,           rate = excluded.rate,
-    buchungsnummer = excluded.buchungsnummer, betrag = excluded.betrag,
-    gesamtbetrag = excluded.gesamtbetrag, paylink = excluded.paylink,
+    buchungsnummer = excluded.buchungsnummer, paylink = excluded.paylink,
+    vorauszahlung = excluded.vorauszahlung, vorausdatum = excluded.vorausdatum,
+    schon_eingegangen = excluded.schon_eingegangen, restbetrag = excluded.restbetrag,
+    zahlbetrag = excluded.zahlbetrag,
     import_id = excluded.import_id,       zuletzt_gesehen = excluded.zuletzt_gesehen
 """
 

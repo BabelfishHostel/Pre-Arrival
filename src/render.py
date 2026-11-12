@@ -92,32 +92,30 @@ class MailDaten:
     abreise: date
     personen: Optional[int]
     sprache: str            # 'de' | 'en'
-    rate: Optional[str]     # 'flex' | 'fix' | None
-    kanal: Optional[str]
     heute: date
     events_html: str
-    betrag: Optional[float] = None          # offener Betrag (CSV amou1)
-    gesamtbetrag: Optional[float] = None    # Gesamtpreis (CSV total)
-    paymentlink: Optional[str] = None
+    paymentlink: Optional[str] = None       # leer = alles bezahlt, kein Zahlungsbereich
+    voraus_datum: Optional[date] = None     # gesetzt = Vorauszahlung nötig (CSV Vorausdatum_1)
+    schon_eingegangen: Optional[float] = None   # bisher bezahlt (CSV Schon_eingegangen), leer = 0
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
 
 
 def zahlung_variante(d: MailDaten) -> Optional[str]:
     """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest' oder 'gesamt'.
 
-    * Kein Paylink (bezahlt, das entscheidet ASSD beim Erzeugen der CSV): kein Bereich.
-    * Kanal EGB und Rate FLEX: Anzahlung nötig.
-        - amou1 >= total: noch nichts bezahlt -> 'anzahlung'
-        - amou1 < total: Anzahlung geleistet, Rest offen -> 'rest'
-        - Betrag oder total fehlen: nicht entscheidbar -> kein Bereich (Warnung im Log)
-    * Alle anderen Gäste mit Paylink (Portale, OTA, Fix, Buchung vor Ort): 'gesamt'.
+    Die Zahlungslogik liegt bei ASSD (Spalten der CSV); Kanal und Rate spielen keine Rolle.
+
+    * Kein Paylink (alles bezahlt): kein Bereich.
+    * Schon etwas bezahlt (Schon_eingegangen > 0): 'rest' (Restbetrag offen).
+    * Noch nichts bezahlt, aber Vorauszahlung nötig (Vorausdatum gesetzt): 'anzahlung'.
+    * Sonst: 'gesamt' (keine Anzahlung nötig, Buchung kann im Voraus bezahlt werden).
     """
     if not d.paymentlink:
         return None
-    if (d.kanal or "").upper() == "EGB" and d.rate == "flex":
-        if d.betrag is None or d.gesamtbetrag is None:
-            return None
-        return "anzahlung" if d.betrag >= d.gesamtbetrag - 0.005 else "rest"
+    if (d.schon_eingegangen or 0) > 0:
+        return "rest"
+    if d.voraus_datum is not None:
+        return "anzahlung"
     return "gesamt"
 
 
