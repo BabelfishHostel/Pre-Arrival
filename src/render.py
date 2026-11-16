@@ -14,6 +14,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from leistungen import leistungen_html, parse_leistungen
+
 VORLAGEN_DIR = Path(__file__).resolve().parent / "templates"
 
 BETREFF = {
@@ -99,6 +101,7 @@ class MailDaten:
     schon_eingegangen: Optional[float] = None   # bisher bezahlt (CSV Schon_eingegangen), leer = 0
     zahlbetrag: Optional[float] = None      # Gesamtbetrag (CSV Zahlbetrag)
     restbetrag: Optional[float] = None      # offener Rest (CSV Restbetrag), leer = 0
+    leistungen: Optional[str] = None        # CSV room (roh); leer/unlesbar = kein Leistungsbereich
     kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
     rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
@@ -188,6 +191,9 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         blk = f"storno_{name}"
         text = _block_behalten(text, blk) if name == storno else _block_entfernen(text, blk)
 
+    positionen = parse_leistungen(d.leistungen)
+    text = _block_behalten(text, "leistungen") if positionen else _block_entfernen(text, "leistungen")
+
     ota = ota_buchung(d)
     text = _block_entfernen(text, "nichtanreise_direkt") if ota else _block_behalten(text, "nichtanreise_direkt")
     text = _block_behalten(text, "nichtanreise_ota") if ota else _block_entfernen(text, "nichtanreise_ota")
@@ -202,6 +208,8 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         "events": d.events_html,
         "stornofrist": datum_kurz(d.anreise - timedelta(days=d.storno_tage), s),
     }
+    if positionen:
+        werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s)
     if variante and d.paymentlink:
         werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():
@@ -220,6 +228,7 @@ def html_zu_text(h: str) -> str:
     t = re.sub(r"(?is)<(style|head|script).*?</\1>", "", t)
     t = re.sub(r"(?i)<br\s*/?>", "\n", t)
     t = re.sub(r"(?i)<a\s[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"\2 (\1)", t, flags=re.S)
+    t = re.sub(r"(?i)</td>", " ", t)
     t = re.sub(r"(?i)</(p|h1|h2|h3|tr|li|table|div)>", "\n", t)
     t = re.sub(r"(?s)<[^>]+>", "", t)
     t = html.unescape(t).replace("\xa0", " ")

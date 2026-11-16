@@ -16,7 +16,7 @@ Vorschau erzeugen: `python3 src/run_send.py --vorschau data/vorschau` (sendet ni
 
 ## Datenquelle: die CSV von ASSD
 
-Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enthält seit 10.11.2026 alle Anreisen von heute bis heute + 3 Tage, ein Gast steht also bis zu 4-mal darin (der Import aktualisiert dieselbe `RegNummer`, das Mail-Log erlaubt nur einen Versand pro Gast). Verwendete Spalten (22 Spalten seit 12.11.2026, die letzte ist `Paylink`; zusätzliche Spalten werden ignoriert, der Import arbeitet über die Kopfzeile):
+Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enthält seit 10.11.2026 alle Anreisen von heute bis heute + 3 Tage, ein Gast steht also bis zu 4-mal darin (der Import aktualisiert dieselbe `RegNummer`, das Mail-Log erlaubt nur einen Versand pro Gast). Verwendete Spalten (23 Spalten seit 16.11.2026, die letzte ist `Paylink`; zusätzliche Spalten werden ignoriert, der Import arbeitet über die Kopfzeile):
 
 | Spalte | Verwendung |
 |---|---|
@@ -32,6 +32,7 @@ Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enth�
 | `Vorausdatum_1` | Datum, bis zu dem die Vorauszahlung fällig ist; immer gesetzt, wenn eine Vorauszahlung nötig ist; `0000-00-00` = nicht gesetzt |
 | `Schon_eingegangen` | bisher bezahlter Betrag |
 | `Zahlbetrag`, `Restbetrag` | Gesamtbetrag und offener Rest (`Zahlbetrag` − `Schon_eingegangen`); werden gespeichert, nicht angezeigt |
+| `room` | Leistungsliste, Einträge getrennt mit `\|`: `Datum Anzahl x Artikelname Einzelpreis Rabatt rabattierter-Gesamtpreis`, z. B. `2026-11-18 3 x 10-Bettzimmer mixed 21.89 10.00 59.10`. Rabatt in Prozent, Gesamtpreis gilt für alle Einheiten. Artikel sind Zimmer, Frühstück und Abzüge (negative Menge, z. B. `Internet Deposit` = vom Portal schon kassiert). Die Summe aller Gesamtpreise ergibt `Zahlbetrag` (an 36 Testzeilen geprüft). Wird roh gespeichert, in der Mail als Tabelle angezeigt |
 | `Paylink` | persönlicher Zahlungslink; **leer = kein Zahlungsbereich** |
 
 Adresse, PLZ und Stadt werden nicht gespeichert. Die Stadt dient beim Import nur dazu, einen als Vorname eingetragenen Ortsnamen zu erkennen.
@@ -74,6 +75,8 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 Kanal und Rate zählen nur für den Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext, solange noch nichts eingegangen ist); sonst keine Rolle (auch `@guest.booking.com` bekommt den Zahlungsbereich, sobald ein Paylink da ist). Betrag und Frist stehen nicht in der Mail. Ist `Restbetrag` offen, aber kein Paylink da, entfällt der Zahlungsbereich und das Log enthält eine Warnung; bei Paylink mit Restbetrag 0 wird der Bereich trotzdem angezeigt (ebenfalls Warnung). `RATE_STANDARD` und `ZAHLUNGSFRIST_TAGE` gibt es nicht mehr.
 
 **Nichtanreise-Satz** (letzter Satz im Bereich „Stimmt alles?“): Direktbuchung (Kanal `EGB` oder leer) bekommt „Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ OTA-Buchung (jeder andere Kanal, z. B. `BHC`, `EHC`) bekommt „Falls Du nicht kommen kannst, geh bitte zur entsprechenden Buchungsplattform und storniere dort Deine Buchung. Wir werden dann von der Plattform automatisch darüber informiert.“ (Blöcke `nichtanreise_direkt` und `nichtanreise_ota`; EN ist meine Übersetzung, noch nicht geprüft.)
+
+**Leistungen** (Spalte `room`): Im Kasten „Deine Buchung“ erscheint unter Anreise/Dauer eine Tabelle „Leistungen“ (EN „Services“) mit einer Zeile je Nacht und Artikel: Datum, Anzahl × Bezeichnung, Betrag. Bei Rabatt oder Anzahl größer 1 steht darunter klein der Einzelpreis und der Rabatt (z. B. „3 × 21,89 EUR, Rabatt 10 %“). Die Bezeichnungen kommen aus ASSD in der Gastsprache; im Deutschen wird `mixed` zu „gemischt“, `female` zu „weiblich“, `male` zu „männlich“. `Internet Deposit` heißt „Bereits über das Portal bezahlt“ / „Already paid via the platform“ (Betrag mit Minus). Zuletzt steht „Gesamtbetrag“ / „Total“ (`Zahlbetrag`, sonst die Summe der Zeilen). Ist `room` leer oder auch nur ein Eintrag nicht lesbar, entfällt der ganze Bereich (kein unvollständiger Betrag), das Log enthält einen Hinweis, die Mail geht trotzdem raus. Code: `src/leistungen.py`, DB-Feld `leistungen` (Schema v5).
 
 ## Anrede
 
@@ -139,6 +142,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Import abgesichert: Hat eine Zeile mehr gefüllte Felder als die Kopfzeile Spalten (z. B. fehlt `Paylink` in der Kopfzeile), bricht der Import ab, die Mail bleibt ungelesen und es wird nichts importiert. Zeilen ganz ohne E-Mail-Adresse (z. B. Buchung vor Ort) zählen nur als Hinweis, nicht als Fehler (der frühere „Importfehler Zeile #5“)
 - Neues CSV-Format und Zahlungstexte inkl. Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext) in den Vorschauen geprüft und in Ordnung (12.11.2026)
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
+- Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
 - Cronjob auf dem NAS läuft, Vorschauen werden erstellt
 - Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
@@ -148,5 +152,4 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 1. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
 2. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
-3. **Gebuchte Betten/Zimmer anzeigen:** Im Bereich „Deine Buchung“ sollen die gebuchten Betten bzw. Zimmer erscheinen. Voraussetzung ist eine Erweiterung der CSV durch ASSD (neue Spalte(n) mit Zimmer-/Bettentyp und Anzahl). Danach: Feld in der Datenbank, Import, neuer Platzhalter in beiden Vorlagen (DE/EN). Zu klären: Format der Angabe (z. B. „2 × Bett im 6er-Zimmer“), Buchungen mit mehreren Zimmertypen, Sprache der Bezeichnungen. *(aufgenommen am 06.11.2026)*
-4. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+3. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).

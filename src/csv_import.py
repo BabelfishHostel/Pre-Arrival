@@ -176,17 +176,18 @@ def _zeile_lesen(zeile: dict) -> dict:
         "schon_eingegangen": _betrag(zeile.get("Schon_eingegangen")),
         "restbetrag": _betrag(zeile.get("Restbetrag")),
         "zahlbetrag": _betrag(zeile.get("Zahlbetrag")),
+        "leistungen": (zeile.get("room") or "").strip() or None,    # roh, siehe leistungen.py
     }
 
 
 UPSERT = """
 INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise,
                       buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer,
-                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, import_id,
+                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, leistungen, import_id,
                       erstmals_importiert, zuletzt_gesehen)
 VALUES (:reg_nummer, :vorname, :nachname, :email, :anreise, :abreise,
         :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer,
-        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag,
+        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag, :leistungen,
         :import_id, :jetzt, :jetzt)
 ON CONFLICT(reg_nummer) DO UPDATE SET
     vorname = excluded.vorname,           nachname = excluded.nachname,
@@ -197,7 +198,7 @@ ON CONFLICT(reg_nummer) DO UPDATE SET
     buchungsnummer = excluded.buchungsnummer, paylink = excluded.paylink,
     vorauszahlung = excluded.vorauszahlung, vorausdatum = excluded.vorausdatum,
     schon_eingegangen = excluded.schon_eingegangen, restbetrag = excluded.restbetrag,
-    zahlbetrag = excluded.zahlbetrag,
+    zahlbetrag = excluded.zahlbetrag,     leistungen = excluded.leistungen,
     import_id = excluded.import_id,       zuletzt_gesehen = excluded.zuletzt_gesehen
 """
 

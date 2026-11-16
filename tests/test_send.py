@@ -306,8 +306,8 @@ def test_migration():
                            " zuletzt_gesehen TEXT NOT NULL);")
         init_db(conn)
         spalten = {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
-        assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag"} <= spalten
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag", "leistungen"} <= spalten
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
         init_db(conn)  # idempotent
         conn.close()
 
@@ -559,6 +559,83 @@ def test_bezahlt_und_ota():
         assert ("Buchungsplattform" in h_de) == ota and ("sag uns bitte kurz Bescheid" in h_de) == (not ota)
         h_en = render_mail((daten(kanal=kanal, sprache="en")))["html"]
         assert ("booking platform" in h_en) == ota and ("please let us know" in h_en) == (not ota)
+
+
+ROOM_DE = ("2026-11-18 3 x Frühstück 7.90 0.00 23.70|2026-11-18 3 x 10-Bettzimmer mixed 21.89 10.00 59.10"
+           "|2026-11-19 1 x 4-Bettzimmer female 27.20 0.00 27.20")
+ROOM_EN = ("2026-11-17 -1 x Internet Deposit 9.09 0.00 -9.09|2026-11-17 1 x 10 bed mixed room 19.85 0.00 19.85"
+           "|2026-11-18 1 x 10 bed mixed room 19.85 0.00 19.85|2026-11-19 1 x 10 bed mixed room 20.90 0.00 20.90")
+
+
+def test_leistungen():
+    """Spalte room: Zerlegen, Darstellung DE/EN, Rabatt, Anzahl > 1, Portal-Abzug, Gesamtbetrag."""
+    from leistungen import bezeichnung, gesamtsumme, leistungen_html, parse_leistungen
+    pos = parse_leistungen(ROOM_DE)
+    assert [(p.anzahl, p.name, p.gesamt) for p in pos] == [
+        (3, "Frühstück", 23.7), (3, "10-Bettzimmer mixed", 59.1), (1, "4-Bettzimmer female", 27.2)]
+    assert pos[1].rabatt == 10.0 and abs(pos[1].anzahl * pos[1].einzelpreis * 0.9 - pos[1].gesamt) < 0.01
+    # unlesbar/leer -> None (keine halbe Liste)
+    for kaputt in (None, "", "  ", "kaputt", ROOM_DE + "|2026-11-19 x", "2026-11-19 1 x Zimmer abc 0.00 1"):
+        assert parse_leistungen(kaputt) is None, kaputt
+    assert bezeichnung("6-Bettzimmer mixed", "de") == "6-Bettzimmer gemischt"
+    assert bezeichnung("4-Bettzimmer female", "de") == "4-Bettzimmer weiblich"
+    assert bezeichnung("4-Bettzimmer male", "de") == "4-Bettzimmer männlich"
+    assert bezeichnung("4 bed mixed room", "en") == "4 bed mixed room"
+    assert bezeichnung("4-Bettzimmer privat", "de") == "4-Bettzimmer privat"
+    assert bezeichnung("Internet Deposit", "de") == "Bereits über das Portal bezahlt"
+    assert bezeichnung("Internet Deposit", "en") == "Already paid via the platform"
+    de = leistungen_html(pos, 109.9, "de")
+    assert "18.11.2026" in de and "3 &times; 10-Bettzimmer gemischt" in de
+    assert "3 &times; 21,89 EUR, Rabatt 10 %" in de and "59,10 EUR" in de and "3 &times; 7,90 EUR" in de
+    assert "Gesamtbetrag" in de and "109,90 EUR" in de and "mixed" not in de
+    assert "Rabatt" not in leistungen_html(parse_leistungen("2026-11-18 1 x Einzelzimmer 46.90 0.00 46.90"), None, "de")
+    en = leistungen_html(parse_leistungen(ROOM_EN), 51.51, "en")
+    assert "Already paid via the platform" in en and "\u2212EUR 9.09" in en and "EUR 19.85" in en
+    assert "Total" in en and "EUR 51.51" in en and "&times; Already" not in en
+    assert en.index("17.11.2026") < en.index("19.11.2026")
+    # Rabatt-Format, Gesamtbetrag aus der Summe, wenn Zahlbetrag fehlt
+    assert "Rabatt 12,5 %" in leistungen_html(parse_leistungen("2026-11-18 1 x Zimmer 10.00 12.50 8.75"), None, "de")
+    assert gesamtsumme(parse_leistungen(ROOM_EN), None) == 51.51 and gesamtsumme(pos, 5.0) == 5.0
+    assert gesamtsumme(parse_leistungen("2026-11-18 -1 x Internet Deposit 9.09 0.00 -9.09"), None) is None
+    # HTML-Escape
+    assert "&lt;b&gt;" in leistungen_html(parse_leistungen("2026-11-18 1 x <b> 1.00 0.00 1.00"), None, "de")
+
+
+def test_leistungen_mail_und_import():
+    """Bereich in der Mail nur bei lesbarer Spalte; Import speichert den Rohtext."""
+    from csv_import import importiere_csv
+    from run_send import SendKonfig, leistungen_hinweis, mail_daten
+    h = render_mail(daten(leistungen=ROOM_DE, zahlbetrag=109.9))
+    assert "Leistungen:" in h["html"] and "3 &times; 10-Bettzimmer gemischt" in h["html"] and "109,90 EUR" in h["html"]
+    assert "Leistungen:" in h["text"] and "Gesamtbetrag" in h["text"] and "18.11.2026 3" in h["text"]
+    he = render_mail(daten(leistungen=ROOM_EN, zahlbetrag=51.51, sprache="en"))
+    assert "Services:" in he["html"] and "EUR 51.51" in he["html"]
+    for kein in (None, "", "kaputt"):
+        hh = render_mail(daten(leistungen=kein))["html"]
+        assert "Leistungen:" not in hh and "{{" not in hh and "BLOCK:" not in hh
+    kopf = KOPF_NEU.replace(";Paylink", ";room;Paylink")
+    zeile = ("     90100;410200-20-1;I01;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-07-01;3;Anna;Test;;;;a@example.com;D;EGB;FLEX;"
+             "0.00;0000-00-00;0.00;82.8;82.80;" + ROOM_DE.split("|")[0] + "|" + ROOM_DE.split("|")[1] + ";https://pay.example/1")
+    kaputt = zeile.replace("90100", "90101").replace("a@example.com", "b@example.com").replace("Frühstück 7.90", "Frühstück sieben")
+    ohne = "     90102;;I03;2026-11-13 00:00:00;2026-11-14 00:00:00;2026-07-01;1;Fia;Test;;;;c@example.com;D;;;0.00;0000-00-00;0.00;;;;"
+    with tempfile.TemporaryDirectory() as tmp:
+        pfad = Path(tmp) / "r.csv"
+        pfad.write_bytes("\r\n".join([kopf, zeile, kaputt, ohne]).encode("utf-8"))
+        conn = verbinde(Path(tmp) / "r.sqlite")
+        init_db(conn)
+        e = importiere_csv(conn, pfad)
+        assert (e.gesamt, e.neu, e.fehler) == (3, 3, 0), e
+        z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90100'").fetchone()
+        assert z["leistungen"].startswith("2026-11-18 3 x Frühstück") and z["zahlbetrag"] == 82.8
+        d = mail_daten(z, SendKonfig(), ev.EventQuelle(""), date(2026, 11, 10))
+        assert "3 &times; 10-Bettzimmer gemischt" in render_mail(d)["html"]
+        assert leistungen_hinweis(z) is None
+        k = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90101'").fetchone()
+        assert "nicht lesbar" in leistungen_hinweis(k)
+        assert "Leistungen:" not in render_mail(mail_daten(k, SendKonfig(), ev.EventQuelle(""), date(2026, 11, 10)))["html"]
+        o = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90102'").fetchone()
+        assert o["leistungen"] is None and leistungen_hinweis(o) is None
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -87,6 +87,14 @@ def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
     return None
 
 
+def leistungen_hinweis(z: sqlite3.Row) -> Optional[str]:
+    """Hinweis, wenn die Spalte room gefüllt, aber nicht lesbar ist (der Bereich entfällt, die Mail geht raus)."""
+    from leistungen import parse_leistungen
+    if z["leistungen"] and parse_leistungen(z["leistungen"]) is None:
+        return "Leistungsliste (room) nicht lesbar - Bereich entfällt"
+    return None
+
+
 def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) -> MailDaten:
     sprache = z["sprache"] if z["sprache"] in ("de", "en") else k.sprache_standard
     anreise = date.fromisoformat(z["anreise"])
@@ -99,6 +107,7 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
         voraus_datum=date.fromisoformat(z["vorausdatum"]) if z["vorausdatum"] else None,
         kanal=(z["kanal"] or "").strip().upper() or None, rate=z["rate"],
         schon_eingegangen=z["schon_eingegangen"], zahlbetrag=z["zahlbetrag"], restbetrag=z["restbetrag"],
+        leistungen=z["leistungen"],
         storno_tage=k.storno_tage,
     )
 
@@ -145,7 +154,7 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: ungültige E-Mail-Adresse")
             continue
-        hinweis = zahlung_hinweis(z)
+        hinweis = zahlung_hinweis(z) or leistungen_hinweis(z)
         if hinweis:
             erg.details.append(f"{ref}: {hinweis}")
             log.warning("%s: %s", ref, hinweis)
