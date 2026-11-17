@@ -104,7 +104,7 @@ class MailDaten:
     leistungen: Optional[str] = None        # CSV room (roh); leer/unlesbar = kein Leistungsbereich
     kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
     rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
-    storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
+    storno_tage: int = 2                    # in den letzten N Tagen vor Anreise nicht mehr kostenfrei
 
 
 def komplett_bezahlt(d: MailDaten) -> bool:
@@ -148,9 +148,16 @@ def anzahlung_offen(d: MailDaten) -> bool:
     return zahlung_variante(d) == "anzahlung"
 
 
+def storno_letzter_tag(d: MailDaten) -> date:
+    """Letzter Tag mit kostenfreier Stornierung: Die letzten `storno_tage` Tage vor der Anreise sind nicht mehr
+    kostenfrei, also Anreise - storno_tage - 1 (Anreise 20.11., 2 Tage: 19. und 18.11. kostenpflichtig, letzter
+    kostenfreier Tag der 17.11.)."""
+    return d.anreise - timedelta(days=d.storno_tage + 1)
+
+
 def storno_variante(d: MailDaten) -> Optional[str]:
     """Satz zur kostenfreien Stornierung: 'morgen', 'heute', 'datum' (später) oder None (abgelaufen)."""
-    tage = (d.anreise - timedelta(days=d.storno_tage) - d.heute).days
+    tage = (storno_letzter_tag(d) - d.heute).days
     if tage < 0:
         return None
     return {0: "heute", 1: "morgen"}.get(tage, "datum")
@@ -206,7 +213,7 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         "naechte": naechte_text(max((d.abreise - d.anreise).days, 1), s),
         "gaeste": gaeste_text(d.personen, s),
         "events": d.events_html,
-        "stornofrist": datum_kurz(d.anreise - timedelta(days=d.storno_tage), s),
+        "stornofrist": datum_kurz(storno_letzter_tag(d), s),
     }
     if positionen:
         werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s)

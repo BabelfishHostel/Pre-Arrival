@@ -48,12 +48,12 @@ def test_format():
 
 
 def test_bloecke():
-    # "Stimmt alles?": fester Teil bleibt, Storno-Satz richtet sich nach dem Versandtag (Frist = Anreise - 2 Tage)
+    # "Stimmt alles?": fester Teil bleibt, Storno-Satz richtet sich nach dem Versandtag (letzter kostenfreier Tag = Anreise - 3, die 2 Tage davor sind kostenpflichtig)
     fest = {"de": ("Schau kurz drüber, ob Datum und Personenzahl passen.", "Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid"),
             "en": ("check that the dates and the number of guests are correct", "If you can't make it, please let us know")}
-    satz = {"de": {"morgen": "läuft morgen ab", "heute": "läuft heute ab", "datum": "läuft am <strong>Mi, 7. Okt</strong> ab"},
-            "en": {"morgen": "ends tomorrow", "heute": "ends today", "datum": "ends on <strong>Wed, 7 Oct</strong>"}}
-    for tage_vor, erwartet in ((4, "datum"), (3, "morgen"), (2, "heute"), (1, None), (0, None)):
+    satz = {"de": {"morgen": "läuft morgen ab", "heute": "läuft heute ab", "datum": "läuft am <strong>Di, 6. Okt</strong> ab"},
+            "en": {"morgen": "ends tomorrow", "heute": "ends today", "datum": "ends on <strong>Tue, 6 Oct</strong>"}}
+    for tage_vor, erwartet in ((5, "datum"), (4, "morgen"), (3, "heute"), (2, None), (1, None), (0, None)):
         d0 = daten(heute=ANREISE - timedelta(days=tage_vor))
         assert storno_variante(d0) == erwartet, tage_vor
         for sprache in ("de", "en"):
@@ -412,7 +412,10 @@ def test_csv_2026_11():
             assert ("komplett bezahlt" in h or "paid in full" in h) == (var == "bezahlt"), reg
             ota = reg == "90004"       # Kanal BHC
             assert ("Buchungsplattform" in h or "booking platform" in h) == ota, reg
-            assert ("läuft morgen ab" in h) == (d.anreise == date(2026, 11, 13) and d.sprache == "de"), reg
+            # letzter kostenfreier Tag = Anreise - 3: Versand 10.11. -> Anreise 13.11. "heute", 14.11. "morgen", später Datum
+            soll = {date(2026, 11, 13): "heute", date(2026, 11, 14): "morgen"}.get(d.anreise, "datum")
+            assert storno_variante(d) == soll, reg
+            assert ("läuft heute ab" in h) == (soll == "heute" and d.sprache == "de"), reg
             assert "{{" not in h
         # Felder
         a = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90002'").fetchone()

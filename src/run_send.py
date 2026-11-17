@@ -50,7 +50,7 @@ class SendKonfig:
     postfach: str = ""                      # Graph-Postfach, Standard = absender
     tage_vorher: int = 3
     sprache_standard: str = "de"
-    storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
+    storno_tage: int = 2                    # in den letzten N Tagen vor Anreise nicht mehr kostenfrei
     max_import_alter_tage: int = 0          # ältester erlaubter CSV-Import (0 = nur von heute)
     vorschau_dir: Optional[Path] = None
 

@@ -54,14 +54,14 @@ Bei einer späteren Zahlungserinnerung bewusst anders formulieren, sonst wird si
 
 Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BLOCK:name:END -->`. Der Job entfernt nicht benötigte Blöcke samt Markern. Nach dem Rendern bleiben weder Kommentare noch Platzhalter übrig, sonst bricht der Versand für diesen Gast mit einem Fehler ab.
 
-**Bereich „Stimmt alles?“** ist bis auf den letzten Satz für alle Gäste gleich (der Nichtanreise-Satz unterscheidet Direkt- und OTA-Buchung, siehe unten): „Schau kurz drüber, ob Datum und Personenzahl passen. [Frist-Satz] Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ Für alle Buchungen der Liste gilt die kostenfreie Stornierung bis `STORNO_TAGE` (Standard 2) Tage vor Anreise. Der Frist-Satz richtet sich nach dem Versandtag, damit er nie falsch ist:
+**Bereich „Stimmt alles?“** ist bis auf den letzten Satz für alle Gäste gleich (der Nichtanreise-Satz unterscheidet Direkt- und OTA-Buchung, siehe unten): „Schau kurz drüber, ob Datum und Personenzahl passen. [Frist-Satz] Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ Für alle Buchungen der Liste sind die letzten `STORNO_TAGE` (Standard 2) Tage vor Anreise nicht mehr kostenfrei, der **letzte kostenfreie Tag ist also Anreise minus 3 Tage** (Anreise 20.11.: 19. und 18.11. kostenpflichtig, letzter kostenfreier Tag 17.11.; geändert am 18.11.2026, vorher war die Frist einen Tag zu spät). Der Frist-Satz richtet sich nach dem Versandtag, damit er nie falsch ist:
 
 | Block | Wann | Text |
 |---|---|---|
-| `storno_morgen` | Frist endet morgen (Normalfall bei Versand 3 Tage vor Anreise) | „Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.“ |
-| `storno_heute` | Frist endet heute | „… läuft heute ab.“ |
-| `storno_datum` | Frist endet später | „… läuft am *Mi, 7. Okt* ab.“ |
-| (keiner) | Frist schon abgelaufen | der Satz entfällt |
+| `storno_morgen` | letzter kostenfreier Tag ist morgen (Versand 4 Tage vor Anreise) | „Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.“ |
+| `storno_heute` | letzter kostenfreier Tag ist heute (Normalfall bei Versand 3 Tage vor Anreise) | „… läuft heute ab.“ |
+| `storno_datum` | letzter kostenfreier Tag liegt später | „… läuft am *Di, 17. Nov* ab.“ |
+| (keiner) | Frist schon abgelaufen (Anreise heute, morgen oder in 2 Tagen) | der Satz entfällt |
 
 **Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint, wenn die CSV einen `Paylink` enthält, oder (ohne Paylink) wenn die Buchung komplett bezahlt ist. Der Einleitungssatz hängt vom Zahlstand ab (Reihenfolge der Prüfung):
 
