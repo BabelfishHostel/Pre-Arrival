@@ -78,6 +78,10 @@ Kanal und Rate zählen nur für den Sonderfall Website-Flex (`EGB` + `FLEX` → 
 
 **Leistungen** (Spalte `room`): Im Kasten „Deine Buchung“ erscheint unter Anreise/Dauer eine Tabelle „Leistungen“ (EN „Services“) mit einer Zeile je Nacht und Artikel: Datum, Anzahl × Bezeichnung, Betrag. Bei Rabatt oder Anzahl größer 1 steht darunter klein der Einzelpreis und der Rabatt (z. B. „3 × 21,89 EUR, Rabatt 10 %“). Die Bezeichnungen kommen aus ASSD in der Gastsprache; im Deutschen wird `mixed` zu „gemischt“, `female` zu „weiblich“, `male` zu „männlich“. `Internet Deposit` heißt „Bereits über das Portal bezahlt“ / „Already paid via the platform“ (Betrag mit Minus). Zuletzt steht „Gesamtbetrag“ / „Total“ (`Zahlbetrag`, sonst die Summe der Zeilen). Ist `room` leer oder auch nur ein Eintrag nicht lesbar, entfällt der ganze Bereich (kein unvollständiger Betrag), das Log enthält einen Hinweis, die Mail geht trotzdem raus. Code: `src/leistungen.py`, DB-Feld `leistungen` (Schema v5).
 
+## Stornierte und verschobene Buchungen
+
+Der Import löscht keine Gäste, die in einer neuen CSV fehlen; sie bleiben mit dem Stand ihres letzten Imports in der Datenbank (bis 30 Tage nach Abreise). Die CSV enthält aber täglich alle Anreisen von heute bis heute + 3 Tage. Deshalb versendet der Versand-Job nur an Gäste, die im **letzten CSV-Import** stehen. Wer dort fehlt, bekommt keine Mail; das Log nennt die Buchung (RegNummer, Anreise, „nicht mehr in der aktuellen CSV, storniert oder verschoben?“). Damit nicht eine alte Gästeliste als aktuell gilt, prüft der Job vorher, ob der letzte Import jung genug ist: `MAX_IMPORT_ALTER_TAGE` (Standard 0 = nur von heute). Ist er älter (z. B. ASSD-Mail ausgeblieben), sendet `--live` nichts und meldet Fehler (Exit 1, Healthcheck-Fehlerping); Trockenlauf und Test warnen nur. Wird dieselbe CSV nochmals eingelesen, wird der Zeitstempel des Imports aufgefrischt, und kehrt ein älterer Stand zurück, wird er neu eingelesen. Hat ein Gast die Mail schon bekommen und storniert danach, lässt sich das nicht zurückholen. *(Lücke am 17.11.2026 beim Prüfen der Vorschau gefunden und geschlossen.)*
+
 ## Anrede
 
 - Vorname leer, mit Ziffern oder gleich der Stadt → `Hallo zusammen,` / `Hi everyone,` (die Stadt prüft der Import, danach ist der Vorname leer)
@@ -143,6 +147,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Neues CSV-Format und Zahlungstexte inkl. Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext) in den Vorschauen geprüft und in Ordnung (12.11.2026)
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
+- Stornierte/verschobene Buchungen: Versand nur an Gäste aus dem letzten CSV-Import, Aktualitätsprüfung `MAX_IMPORT_ALTER_TAGE` (17.11.2026)
 - Cronjob auf dem NAS läuft, Vorschauen werden erstellt
 - Fehlende Anreisetage in der CSV: Ursache war die SQL-Abfrage bei ASSD, behoben
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
@@ -151,5 +156,5 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 ## Offen
 
 1. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-2. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die in der Datenbank stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
+2. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die im letzten CSV-Import stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
 3. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).

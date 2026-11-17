@@ -17,11 +17,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import events as ev
-from db import init_db, verbinde
+from db import init_db, letzter_import, verbinde
 from graph_mail import VersandFehler, baue_mime, sende_mime
 from render import (MailDaten, anrede, betrag_text, datum_lang, gaeste_text, naechte_text,
                     render_mail, zahlung_aktiv, zahlung_variante, storno_variante)
-from run_send import SendKonfig, VORLAGE, verarbeite
+from run_send import SendKonfig, VORLAGE, faellige_gaeste, import_pruefung, verarbeite
 
 HEUTE = date(2026, 10, 7)
 ANREISE = date(2026, 10, 9)
@@ -214,11 +214,15 @@ def test_events():
     assert ev.sheet_url("ID", "Veranstaltungen").endswith("tqx=out%3Acsv&sheet=Veranstaltungen")
 
 
-def _gast(conn, reg, vorname, anreise="2026-10-09", email_="a@example.com", sprache="de", rate="flex", kanal=None):
+def _gast(conn, reg, vorname, anreise="2026-10-09", email_="a@example.com", sprache="de", rate="flex", kanal=None,
+          import_id=1):
+    """Legt einen Gast an, der im Import `import_id` steht (Import 1 = Stand von HEUTE, wird bei Bedarf angelegt)."""
+    conn.execute("INSERT OR IGNORE INTO import_log (id, dateiname, sha256, importiert_am) VALUES (1, 't', 't', ?)",
+                 (HEUTE.isoformat() + " 06:00:00",))
     conn.execute(
         "INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise, anzahl_personen, kanal, sprache, rate,"
-        " erstmals_importiert, zuletzt_gesehen) VALUES (?,?,?,?,?,?,?,?,?,?,'x','x')",
-        (reg, vorname, "N", email_, anreise, "2026-10-11", 2, kanal, sprache, rate))
+        " import_id, erstmals_importiert, zuletzt_gesehen) VALUES (?,?,?,?,?,?,?,?,?,?,?,'x','x')",
+        (reg, vorname, "N", email_, anreise, "2026-10-11", 2, kanal, sprache, rate, import_id))
     conn.commit()
 
 
@@ -635,6 +639,73 @@ def test_leistungen_mail_und_import():
         assert "Leistungen:" not in render_mail(mail_daten(k, SendKonfig(), ev.EventQuelle(""), date(2026, 11, 10)))["html"]
         o = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90102'").fetchone()
         assert o["leistungen"] is None and leistungen_hinweis(o) is None
+        conn.close()
+
+
+def test_storno_und_aktualitaet():
+    """Gäste, die in der letzten CSV fehlen (storniert), und veraltete Importe verhindern den Versand."""
+    from datetime import timedelta
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "s.sqlite")
+        init_db(conn)
+        _gast(conn, "1", "Bleibt")                          # Import 1 (Vortag-Stand), dann auch in Import 2
+        _gast(conn, "2", "Storniert", email_="b@example.com")   # nur in Import 1
+        conn.execute("INSERT INTO import_log (id, dateiname, sha256, importiert_am) VALUES (2, 't2', 't2', ?)",
+                     (HEUTE.isoformat() + " 06:10:00",))
+        conn.execute("UPDATE arrivals SET import_id = 2 WHERE reg_nummer = '1'")
+        conn.commit()
+        k = SendKonfig(vorschau_dir=Path(tmp) / "v")
+        q = ev.EventQuelle("")
+        assert [z["reg_nummer"] for z in faellige_gaeste(conn, HEUTE, 3)] == ["1"]
+        assert [z["reg_nummer"] for z in faellige_gaeste(conn, HEUTE, 3, nur_letzter_import=False)] == ["1", "2"]
+        e = verarbeite(conn, k, q, HEUTE, "dry")
+        assert e.vorschau == 1 and any("Gast 2" in d and "nicht mehr in der aktuellen CSV" in d for d in e.details), e
+        assert not (Path(tmp) / "v" / "2_de.html").exists()
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg)
+            return msg["Message-ID"]
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert e.gesendet == 1 and gesendet[0]["To"] == "a@example.com", e
+        assert conn.execute("SELECT COUNT(*) FROM mail_log").fetchone()[0] == 1       # Stornierter ohne Log
+        # Veralteter Import: live sendet nichts und meldet Fehler, Trockenlauf warnt nur
+        _gast(conn, "3", "Neu", import_id=2)
+        morgen = HEUTE + timedelta(days=1)
+        e = verarbeite(conn, k, q, morgen, "live", sender)
+        assert e.gesendet == 0 and e.fehler == 1 and "1 Tag(e) alt" in e.details[0], e
+        e = verarbeite(conn, k, q, morgen, "dry")
+        assert e.fehler == 0 and e.vorschau >= 0 and "1 Tag(e) alt" in e.details[0]
+        # Toleranz einstellbar
+        assert import_pruefung(conn, morgen, 1) is None and import_pruefung(conn, morgen, 0) is not None
+        assert import_pruefung(conn, HEUTE, 0) is None
+        # Ohne Import gar kein Versand
+        leer = verbinde(Path(tmp) / "leer.sqlite")
+        init_db(leer)
+        assert "keinen CSV-Import" in import_pruefung(leer, HEUTE, 0) and faellige_gaeste(leer, HEUTE, 3) == []
+        conn.close(); leer.close()
+
+
+def test_gleiche_csv_erneut():
+    """Dieselbe Datei nochmals: Zeitstempel wird aufgefrischt; Wiederkehr eines älteren Stands wird neu eingelesen."""
+    from csv_import import importiere_csv
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "g.sqlite")
+        init_db(conn)
+        a, b = Path(tmp) / "a.csv", Path(tmp) / "b.csv"
+        a.write_bytes((KOPF_NEU + "\r\n" + _ZEILEN_NEU[0] + "\r\n" + _ZEILEN_NEU[1] + "\r\n").encode("utf-8"))
+        b.write_bytes((KOPF_NEU + "\r\n" + _ZEILEN_NEU[1] + "\r\n").encode("utf-8"))      # Gast 90001 fehlt
+        e1 = importiere_csv(conn, a)
+        conn.execute("UPDATE import_log SET importiert_am = '2020-01-01 06:00:00'")
+        conn.commit()
+        e2 = importiere_csv(conn, a)                         # gleiche Datei, ist der letzte Import
+        assert e2.bereits_importiert and e2.import_id == e1.import_id
+        assert letzter_import(conn)["importiert_am"][:4] != "2020"
+        e3 = importiere_csv(conn, b)                          # anderer Stand
+        assert not e3.bereits_importiert and letzter_import(conn)["id"] == e3.import_id
+        e4 = importiere_csv(conn, a)                          # alter Stand kehrt zurück: neu einlesen
+        assert not e4.bereits_importiert and letzter_import(conn)["id"] == e4.import_id
+        assert {r["import_id"] for r in conn.execute("SELECT import_id FROM arrivals")} == {e4.import_id}
+        assert importiere_csv(conn, a).bereits_importiert
         conn.close()
 
 

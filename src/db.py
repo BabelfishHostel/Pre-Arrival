@@ -113,6 +113,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
+def letzter_import(conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
+    """Der zuletzt verarbeitete CSV-Import (Zeile mit id, importiert_am) oder None."""
+    return conn.execute("SELECT id, importiert_am FROM import_log ORDER BY id DESC LIMIT 1").fetchone()
+
+
 def loesche_alte_gaeste(
     conn: sqlite3.Connection,
     tage_nach_abreise: int = 30,

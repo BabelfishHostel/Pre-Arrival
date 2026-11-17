@@ -234,7 +234,17 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
         "SELECT id FROM import_log WHERE sha256 = ?", (pruefsumme,)
     ).fetchone()
     if vorhanden:
-        return ImportErgebnis(bereits_importiert=True, import_id=vorhanden["id"])
+        letzte = conn.execute("SELECT MAX(id) FROM import_log").fetchone()[0]
+        if vorhanden["id"] == letzte:
+            # Gleiche Datei nochmals (z. B. unveränderte Anreiseliste): Zeitstempel auffrischen, damit die
+            # Aktualitätsprüfung im Versand sie als heutigen Stand erkennt.
+            with conn:
+                conn.execute("UPDATE import_log SET importiert_am = ? WHERE id = ?", (jetzt(), vorhanden["id"]))
+            return ImportErgebnis(bereits_importiert=True, import_id=vorhanden["id"])
+        # Gleiche Datei wie ein älterer Import, dazwischen kam aber ein anderer Stand: neu einlesen,
+        # damit sie wieder der letzte Import ist. Der alte Eintrag bleibt (Verweise), nur die Prüfsumme wird frei.
+        with conn:
+            conn.execute("UPDATE import_log SET sha256 = sha256 || '#ersetzt' || id WHERE id = ?", (vorhanden["id"],))
 
     try:
         text = rohdaten.decode("utf-8-sig")

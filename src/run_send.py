@@ -9,7 +9,10 @@ Modi (Standard ist der sichere Trockenlauf):
     python run_send.py --live             echter Versand an die Gäste, Protokoll in mail_log
 
 Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 3),
+Gast steht im letzten CSV-Import (wer dort fehlt, wurde storniert oder verschoben),
 und für die Vorlage gibt es noch keinen 'gesendet'/'uebersprungen'-Eintrag.
+Ist der letzte CSV-Import älter als MAX_IMPORT_ALTER_TAGE (Standard 0 = nur heute), sendet --live
+nichts und endet mit Fehler (Exit-Code 1); Trockenlauf und Test warnen nur.
 Fehlgeschlagene Mails ('fehler') werden beim nächsten Lauf erneut versucht
 (höchstens MAX_VERSUCHE). Ein Eintrag, der bei 'geplant' hängen blieb (Absturz
 mitten im Versand), wird NICHT automatisch wiederholt, um Doppelmails zu vermeiden.
@@ -28,7 +31,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from db import init_db, jetzt, verbinde
+from db import init_db, jetzt, letzter_import, verbinde
 from events import EventQuelle
 from graph_mail import VersandFehler, baue_mime, hole_graph_token, sende_mime
 from render import MailDaten, render_mail, zahlung_variante
@@ -48,6 +51,7 @@ class SendKonfig:
     tage_vorher: int = 3
     sprache_standard: str = "de"
     storno_tage: int = 2                    # kostenfreie Stornierung bis N Tage vor Anreise
+    max_import_alter_tage: int = 0          # ältester erlaubter CSV-Import (0 = nur von heute)
     vorschau_dir: Optional[Path] = None
 
 
@@ -60,18 +64,49 @@ class SendErgebnis:
     details: List[str] = field(default_factory=list)
 
 
-def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungesendet: bool = True):
-    """Gäste mit Anreise in [heute, heute+tage] ohne abgeschlossenen Versand."""
+def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungesendet: bool = True,
+                    nur_letzter_import: bool = True):
+    """Gäste mit Anreise in [heute, heute+tage] ohne abgeschlossenen Versand.
+
+    Nur Gäste aus dem letzten CSV-Import: Die CSV enthält täglich alle Anreisen im Fenster. Wer dort fehlt
+    (storniert oder verschoben), steht nur noch mit altem Stand in der Datenbank und bekommt keine Mail.
+    """
+    zeilen = _gaeste_im_fenster(conn, heute, tage)
+    if nur_letzter_import:
+        letzter = letzter_import(conn)
+        zeilen = [z for z in zeilen if letzter and z["import_id"] == letzter["id"]]
+    if not nur_ungesendet:
+        return zeilen
+    return [z for z in zeilen if z["m_status"] in (None, "geplant", "fehler")]
+
+
+def _gaeste_im_fenster(conn: sqlite3.Connection, heute: date, tage: int):
     bis = date.fromordinal(heute.toordinal() + tage).isoformat()
     sql = """
         SELECT a.*, m.status AS m_status, COALESCE(m.versuche, 0) AS m_versuche
         FROM arrivals a LEFT JOIN mail_log m ON m.arrival_id = a.id AND m.vorlage = ?
         WHERE a.anreise BETWEEN ? AND ?
     """
-    zeilen = conn.execute(sql + " ORDER BY a.anreise, a.id", (VORLAGE, heute.isoformat(), bis)).fetchall()
-    if not nur_ungesendet:
-        return zeilen
-    return [z for z in zeilen if z["m_status"] in (None, "geplant", "fehler")]
+    return conn.execute(sql + " ORDER BY a.anreise, a.id", (VORLAGE, heute.isoformat(), bis)).fetchall()
+
+
+def gaeste_ohne_aktuelle_csv(conn: sqlite3.Connection, heute: date, tage: int):
+    """Noch nicht angeschriebene Gäste im Fenster, die in der letzten CSV fehlen (storniert/verschoben)."""
+    letzter = letzter_import(conn)
+    return [z for z in _gaeste_im_fenster(conn, heute, tage)
+            if z["m_status"] in (None, "geplant", "fehler") and not (letzter and z["import_id"] == letzter["id"])]
+
+
+def import_pruefung(conn: sqlite3.Connection, heute: date, max_alter_tage: int) -> Optional[str]:
+    """None, wenn der letzte CSV-Import aktuell genug ist, sonst die Begründung."""
+    letzter = letzter_import(conn)
+    if not letzter:
+        return "Es gibt noch keinen CSV-Import"
+    alter = (heute - date.fromisoformat(letzter["importiert_am"][:10])).days
+    if alter > max_alter_tage:
+        return (f"Letzter CSV-Import ist {alter} Tag(e) alt (erlaubt: {max_alter_tage}, Stand "
+                f"{letzter['importiert_am'][:16]}) - die Gästeliste ist womöglich veraltet")
+    return None
 
 
 def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
@@ -138,6 +173,18 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
         sender: Funktion (MIME-Nachricht) -> Message-ID; nötig bei 'test'/'live'.
     """
     erg = SendErgebnis()
+    problem = import_pruefung(conn, heute, k.max_import_alter_tage)
+    if problem:
+        log.error("%s", problem) if modus == "live" else log.warning("%s", problem)
+        erg.details.append(problem)
+        if modus == "live":
+            erg.fehler += 1          # veraltete Liste: nichts senden, Cronjob meldet Fehler
+            return erg
+    for z in gaeste_ohne_aktuelle_csv(conn, heute, k.tage_vorher):
+        text = (f"Gast {z['reg_nummer']} (Anreise {z['anreise']}): nicht mehr in der aktuellen CSV "
+                "(storniert oder verschoben?) - keine Mail")
+        erg.details.append(text)
+        log.info("%s", text)
     for z in faellige_gaeste(conn, heute, k.tage_vorher):
         ref = f"Gast {z['reg_nummer']} (Anreise {z['anreise']})"
         if modus == "live" and z["m_status"] == "geplant" and z["m_versuche"] > 0:
@@ -208,6 +255,7 @@ def lese_konfig() -> SendKonfig:
         tage_vorher=int(e("SEND_TAGE_VORHER", "3")),
         sprache_standard=e("SPRACHE_STANDARD", "de").lower(),
         storno_tage=int(e("STORNO_TAGE", "2")),
+        max_import_alter_tage=int(e("MAX_IMPORT_ALTER_TAGE", "0")),
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
     if k.sprache_standard not in ("de", "en"):
