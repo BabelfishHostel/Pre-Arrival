@@ -32,12 +32,12 @@ DE_WOERTER = (("mixed", "gemischt"), ("female", "weiblich"), ("male", "männlich
 
 # Mehrbettzimmer: ASSD liefert "10-Bettzimmer mixed" (DE) bzw. "10 bed mixed room" (EN); gebucht werden Betten.
 MEHRBETT_DE = re.compile(r"^(\d+)-Bettzimmer (mixed|female|male)$", re.I)
-MEHRBETT_EN = re.compile(r"^(\d+) bed (mixed|female|male) room$", re.I)
+MEHRBETT_EN = re.compile(r"^(\d+) bed (?:room )?(mixed|female|male)(?: only)?(?: room)?$", re.I)
 MEHRBETT_NAME = {
     "de": {"mixed": "Bett im {n}-Bettzimmer gender-mixed", "female": "Bett im {n}-Bettzimmer für Frauen",
            "male": "Bett im {n}-Bettzimmer für Männer"},
-    "en": {"mixed": "Bed in {n}-bed gender-mixed room", "female": "Bed in {n}-bed room for women",
-           "male": "Bed in {n}-bed room for men"},
+    "en": {"mixed": "Bed in {n}-bed gender-mixed room", "female": "Bed in {n}-bed female only room",
+           "male": "Bed in {n}-bed male only room"},
 }
 # Rate -> Zusatz hinter Mehrbettzimmern (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
 RATE_ZUSATZ = {

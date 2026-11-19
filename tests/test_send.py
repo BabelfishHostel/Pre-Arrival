@@ -599,7 +599,11 @@ def test_leistungen():
     assert bezeichnung("Appartement", "de") == "Apartment für 4" and bezeichnung("Appartement", "en") == "Apartment for 4"
     # EN: Mehrbettzimmer als Bett im Zimmer, Rest wie geliefert
     assert bezeichnung("10 bed mixed room", "en") == "Bed in 10-bed gender-mixed room"
-    assert bezeichnung("4 bed female room", "en") == "Bed in 4-bed room for women"
+    assert bezeichnung("4 bed female room", "en") == "Bed in 4-bed female only room"
+    assert bezeichnung("4 bed room female only", "en") == "Bed in 4-bed female only room"
+    assert bezeichnung("4 bed room male only", "en") == "Bed in 4-bed male only room"
+    assert bezeichnung("4 bed room female only", "de") == "Bett im 4-Bettzimmer für Frauen"
+    assert ist_mehrbettzimmer("4 bed room female only")
     assert bezeichnung("Single room", "en") == "Single room" and bezeichnung("Double room", "en") == "Double room"
     # ASSD-Name in der anderen Sprache geliefert: trotzdem passend
     assert bezeichnung("6 bed mixed room", "de") == "Bett im 6-Bettzimmer gender-mixed"
