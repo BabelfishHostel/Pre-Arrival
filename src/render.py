@@ -216,7 +216,7 @@ def render_html(vorlage: str, d: MailDaten) -> str:
         "stornofrist": datum_kurz(storno_letzter_tag(d), s),
     }
     if positionen:
-        werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s)
+        werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s, d.rate)
     if variante and d.paymentlink:
         werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():

@@ -115,10 +115,12 @@ def _paylink(text: Optional[str]) -> Optional[str]:
 
 
 def _rate(text: Optional[str]) -> Optional[str]:
-    """Normalisiert die Rate auf 'flex' / 'fix', sonst None."""
+    """Normalisiert die Rate auf 'flex' (FLEX), 'nrf' (NRF = nicht erstattbar) bzw. 'fix', sonst None."""
     t = (text or "").strip().lower()
     if t.startswith("flex"):
         return "flex"
+    if t.startswith("nrf"):
+        return "nrf"
     if t.startswith("fix"):
         return "fix"
     return None

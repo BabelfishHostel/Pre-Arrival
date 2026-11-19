@@ -110,8 +110,8 @@
         den Markern  BLOCK:name:START  und  BLOCK:name:END
         (jeweils als HTML-Kommentar, siehe weiter unten im Quelltext).
         Der Bereich "Stimmt alles?" ist für alle Gäste gleich; nur
-        der Satz zur kostenfreien Stornierung (Frist = Anreise minus
-        2 Tage) richtet sich nach dem Versandtag:
+        der Satz zur kostenfreien Stornierung (letzter freier Tag =
+        Anreise minus 3 Tage) richtet sich nach dem Versandtag:
 
           storno_morgen           Frist endet morgen
           storno_heute            Frist endet heute
@@ -193,7 +193,7 @@
 
     <h1 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:24px; color:#4a5429; margin:0 0 10px 0;">Deine Anreise steht an</h1>
     <h2 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:16px; font-weight:400; color:#2c2c2c; margin:0 0 10px 0;">{{anrede}}</h2>
-    <p style="margin-top:12px;">bald bist Du bei uns im <strong>Babelfish Hostel</strong>. Damit Du nichts suchen musst, hier noch einmal Deine Buchung, die Check-in-Zeiten und ein paar Tipps, was in Würzburg gerade los ist.</p>
+    <p style="margin-top:12px;">bald bist Du bei uns im <strong>Babelfish Hostel</strong>. Damit Du nichts suchen musst, hier noch einmal Deine Buchung, die Check-in-Zeiten und was in Würzburg gerade los ist.</p>
 
     <h3 style="font-family:'Lora', Georgia, 'Times New Roman', serif; font-size:17px; color:#4a5429; padding:0 0 6px 0; margin:32px 0 0 0; border-bottom:2px solid #6b7a3a;">Deine Buchung</h3>
 
@@ -211,7 +211,7 @@
       <tr>
         <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
           <strong>Stimmt alles?</strong>
-          Schau kurz drüber, ob Datum und Personenzahl passen.
+          Bitte prüfe Datum und Personenzahl.
           <!-- BLOCK:storno_morgen:START -->
           Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.
           <!-- BLOCK:storno_morgen:END -->
@@ -225,7 +225,7 @@
           Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.
           <!-- BLOCK:nichtanreise_direkt:END -->
           <!-- BLOCK:nichtanreise_ota:START -->
-          Falls Du nicht kommen kannst, geh bitte zur entsprechenden Buchungsplattform und storniere dort Deine Buchung. Wir werden dann von der Plattform automatisch darüber informiert.
+          Falls Du stornieren musst, mach das über die Seite, auf der Du gebucht hast &ndash; wir bekommen automatisch Bescheid und Du musst uns nicht extra schreiben.
           <!-- BLOCK:nichtanreise_ota:END -->
         </td>
       </tr>

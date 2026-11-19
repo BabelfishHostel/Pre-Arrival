@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS arrivals (
     anzahl_personen     INTEGER,
     kanal               TEXT,               -- EGB, BHC, EHC; leer = Buchung vor Ort/Telefon
     sprache             TEXT,               -- 'de' oder 'en'
-    rate                TEXT,               -- 'flex' oder 'fix' (leer = unbekannt)
+    rate                TEXT,               -- 'flex', 'nrf' oder 'fix' (leer = unbekannt)
     buchungsnummer      TEXT,               -- Nummer, die der Gast sieht (z. B. 410200-20-12913); leer = vor Ort/Telefon
     betrag              REAL,               -- veraltet (CSV bis 11/2026: amou1), wird nicht mehr geschrieben
     gesamtbetrag        REAL,               -- veraltet (CSV bis 11/2026: total), wird nicht mehr geschrieben

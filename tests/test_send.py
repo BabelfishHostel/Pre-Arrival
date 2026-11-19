@@ -49,8 +49,8 @@ def test_format():
 
 def test_bloecke():
     # "Stimmt alles?": fester Teil bleibt, Storno-Satz richtet sich nach dem Versandtag (letzter kostenfreier Tag = Anreise - 3, die 2 Tage davor sind kostenpflichtig)
-    fest = {"de": ("Schau kurz drüber, ob Datum und Personenzahl passen.", "Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid"),
-            "en": ("check that the dates and the number of guests are correct", "If you can't make it, please let us know")}
+    fest = {"de": ("Bitte prüfe Datum und Personenzahl.", "Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid &ndash; dann wissen wir Bescheid"),
+            "en": ("Please check the dates and the number of guests.", "If you can't make it, please let us know")}
     satz = {"de": {"morgen": "läuft morgen ab", "heute": "läuft heute ab", "datum": "läuft am <strong>Di, 6. Okt</strong> ab"},
             "en": {"morgen": "ends tomorrow", "heute": "ends today", "datum": "ends on <strong>Tue, 6 Oct</strong>"}}
     for tage_vor, erwartet in ((5, "datum"), (4, "morgen"), (3, "heute"), (2, None), (1, None), (0, None)):
@@ -411,7 +411,7 @@ def test_csv_2026_11():
             assert ("Jetzt bezahlen" in h or "Pay now" in h) == (var not in (None, "bezahlt")), reg
             assert ("komplett bezahlt" in h or "paid in full" in h) == (var == "bezahlt"), reg
             ota = reg == "90004"       # Kanal BHC
-            assert ("Buchungsplattform" in h or "booking platform" in h) == ota, reg
+            assert ("auf der Du gebucht hast" in h or "the website you booked on" in h) == ota, reg
             # letzter kostenfreier Tag = Anreise - 3: Versand 10.11. -> Anreise 13.11. "heute", 14.11. "morgen", später Datum
             soll = {date(2026, 11, 13): "heute", date(2026, 11, 14): "morgen"}.get(d.anreise, "datum")
             assert storno_variante(d) == soll, reg
@@ -425,6 +425,8 @@ def test_csv_2026_11():
         c = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90003'").fetchone()
         assert c["vorausdatum"] is None and c["vorauszahlung"] is None and c["schon_eingegangen"] is None   # 0000-00-00 / 0.00
         assert c["rate"] == "flex" and c["kanal"] == "EGB" and c["buchungsnummer"] == "410200-20-1"
+        assert conn.execute("SELECT rate FROM arrivals WHERE reg_nummer='90006'").fetchone()["rate"] == "nrf"     # Rate NRF
+        assert conn.execute("SELECT rate FROM arrivals WHERE reg_nummer='90004'").fetchone()["rate"] is None      # OTA: ohne Zusatz
         assert conn.execute("SELECT email FROM arrivals WHERE reg_nummer='90004'").fetchone()["email"] == "d@example.com"
         assert conn.execute("SELECT sprache FROM arrivals WHERE reg_nummer='90001'").fetchone()["sprache"] == "en"
         assert k.tage_vorher == 3 and k.storno_tage == 2
@@ -563,9 +565,9 @@ def test_bezahlt_und_ota():
         d = (daten(kanal=kanal))
         assert ota_buchung(d) == ota
         h_de = render_mail(d)["html"]
-        assert ("Buchungsplattform" in h_de) == ota and ("sag uns bitte kurz Bescheid" in h_de) == (not ota)
+        assert ("auf der Du gebucht hast" in h_de) == ota and ("sag uns bitte kurz Bescheid" in h_de) == (not ota)
         h_en = render_mail((daten(kanal=kanal, sprache="en")))["html"]
-        assert ("booking platform" in h_en) == ota and ("please let us know" in h_en) == (not ota)
+        assert ("the website you booked on" in h_en) == ota and ("please let us know" in h_en) == (not ota)
 
 
 ROOM_DE = ("2026-11-18 3 x Frühstück 7.90 0.00 23.70|2026-11-18 3 x 10-Bettzimmer mixed 21.89 10.00 59.10"
@@ -576,7 +578,8 @@ ROOM_EN = ("2026-11-17 -1 x Internet Deposit 9.09 0.00 -9.09|2026-11-17 1 x 10 b
 
 def test_leistungen():
     """Spalte room: Zerlegen, Darstellung DE/EN, Rabatt, Anzahl > 1, Portal-Abzug, Gesamtbetrag."""
-    from leistungen import bezeichnung, gesamtsumme, leistungen_html, parse_leistungen
+    from leistungen import (bezeichnung, gesamtsumme, ist_mehrbettzimmer, leistungen_html, parse_leistungen,
+                            rate_zusatz)
     pos = parse_leistungen(ROOM_DE)
     assert [(p.anzahl, p.name, p.gesamt) for p in pos] == [
         (3, "Frühstück", 23.7), (3, "10-Bettzimmer mixed", 59.1), (1, "4-Bettzimmer female", 27.2)]
@@ -584,17 +587,43 @@ def test_leistungen():
     # unlesbar/leer -> None (keine halbe Liste)
     for kaputt in (None, "", "  ", "kaputt", ROOM_DE + "|2026-11-19 x", "2026-11-19 1 x Zimmer abc 0.00 1"):
         assert parse_leistungen(kaputt) is None, kaputt
-    assert bezeichnung("6-Bettzimmer mixed", "de") == "6-Bettzimmer gemischt"
-    assert bezeichnung("4-Bettzimmer female", "de") == "4-Bettzimmer weiblich"
-    assert bezeichnung("4-Bettzimmer male", "de") == "4-Bettzimmer männlich"
-    assert bezeichnung("4 bed mixed room", "en") == "4 bed mixed room"
-    assert bezeichnung("4-Bettzimmer privat", "de") == "4-Bettzimmer privat"
+    # Zimmerliste: DE-Namen wie vom Hostel festgelegt
+    assert bezeichnung("10-Bettzimmer mixed", "de") == "Bett im 10-Bettzimmer gender-mixed"
+    assert bezeichnung("6-Bettzimmer mixed", "de") == "Bett im 6-Bettzimmer gender-mixed"
+    assert bezeichnung("4-Bettzimmer mixed", "de") == "Bett im 4-Bettzimmer gender-mixed"
+    assert bezeichnung("4-Bettzimmer female", "de") == "Bett im 4-Bettzimmer für Frauen"
+    assert bezeichnung("4-Bettzimmer male", "de") == "Bett im 4-Bettzimmer für Männer"
+    for unveraendert in ("Einzelzimmer", "Doppelzimmer", "Doppelzimmer Studio", "4-Bettzimmer privat", "6-Bettzimmer privat",
+                         "Schlafcouch", "Frühstück"):
+        assert bezeichnung(unveraendert, "de") == unveraendert, unveraendert
+    assert bezeichnung("Appartement", "de") == "Apartment für 4" and bezeichnung("Appartement", "en") == "Apartment for 4"
+    # EN: Mehrbettzimmer als Bett im Zimmer, Rest wie geliefert
+    assert bezeichnung("10 bed mixed room", "en") == "Bed in 10-bed gender-mixed room"
+    assert bezeichnung("4 bed female room", "en") == "Bed in 4-bed room for women"
+    assert bezeichnung("Single room", "en") == "Single room" and bezeichnung("Double room", "en") == "Double room"
+    # ASSD-Name in der anderen Sprache geliefert: trotzdem passend
+    assert bezeichnung("6 bed mixed room", "de") == "Bett im 6-Bettzimmer gender-mixed"
+    # Unbekannter Name: im Deutschen mixed/female ersetzen, sonst unverändert
+    assert bezeichnung("Suite mixed", "de") == "Suite gemischt" and bezeichnung("Suite mixed", "en") == "Suite mixed"
+    assert ist_mehrbettzimmer("10-Bettzimmer mixed") and ist_mehrbettzimmer("4 bed female room")
+    assert not ist_mehrbettzimmer("4-Bettzimmer privat") and not ist_mehrbettzimmer("Doppelzimmer")
+    assert rate_zusatz("10-Bettzimmer mixed", "nrf", "de") == ", nicht erstattbar"
+    assert rate_zusatz("10-Bettzimmer mixed", "flex", "de") == ", erstattbar"
+    assert rate_zusatz("10 bed mixed room", "nrf", "en") == ", non-refundable"
+    assert rate_zusatz("10 bed mixed room", "flex", "en") == ", refundable"
+    for keins in (None, "fix", "ota"):
+        assert rate_zusatz("10-Bettzimmer mixed", keins, "de") == "", keins
+    assert rate_zusatz("Doppelzimmer", "nrf", "de") == "" and rate_zusatz("Frühstück", "flex", "de") == ""
     assert bezeichnung("Internet Deposit", "de") == "Bereits über das Portal bezahlt"
     assert bezeichnung("Internet Deposit", "en") == "Already paid via the platform"
     de = leistungen_html(pos, 109.9, "de")
-    assert "18.11.2026" in de and "3 &times; 10-Bettzimmer gemischt" in de
+    assert "18.11.2026" in de and "3 &times; Bett im 10-Bettzimmer gender-mixed<br>" in de
+    assert "3 &times; Bett im 10-Bettzimmer gender-mixed, erstattbar<br>" in leistungen_html(pos, 109.9, "de", "flex")
+    assert "3 &times; Bett im 10-Bettzimmer gender-mixed, nicht erstattbar<br>" in leistungen_html(pos, 109.9, "de", "nrf")
+    assert "1 &times; Bett im 4-Bettzimmer für Frauen, nicht erstattbar</td>" in leistungen_html(pos, 109.9, "de", "nrf")
+    assert "3 &times; Frühstück<br>" in leistungen_html(pos, 109.9, "de", "nrf")      # kein Zusatz bei Frühstück
     assert "3 &times; 21,89 EUR, Rabatt 10 %" in de and "59,10 EUR" in de and "3 &times; 7,90 EUR" in de
-    assert "Gesamtbetrag" in de and "109,90 EUR" in de and "mixed" not in de
+    assert "Gesamtbetrag" in de and "109,90 EUR" in de and "mixed" not in de.replace("gender-mixed", "")
     assert "Rabatt" not in leistungen_html(parse_leistungen("2026-11-18 1 x Einzelzimmer 46.90 0.00 46.90"), None, "de")
     en = leistungen_html(parse_leistungen(ROOM_EN), 51.51, "en")
     assert "Already paid via the platform" in en and "\u2212EUR 9.09" in en and "EUR 19.85" in en
@@ -613,7 +642,10 @@ def test_leistungen_mail_und_import():
     from csv_import import importiere_csv
     from run_send import SendKonfig, leistungen_hinweis, mail_daten
     h = render_mail(daten(leistungen=ROOM_DE, zahlbetrag=109.9))
-    assert "Leistungen:" in h["html"] and "3 &times; 10-Bettzimmer gemischt" in h["html"] and "109,90 EUR" in h["html"]
+    assert "Leistungen:" in h["html"] and "3 &times; Bett im 10-Bettzimmer gender-mixed" in h["html"] and "109,90 EUR" in h["html"]
+    assert "nicht erstattbar" not in h["html"] and "erstattbar" not in h["html"]            # daten(): keine Rate
+    assert "gender-mixed, nicht erstattbar" in render_mail(daten(leistungen=ROOM_DE, zahlbetrag=109.9, rate="nrf"))["html"]
+    assert "gender-mixed, erstattbar" in render_mail(daten(leistungen=ROOM_DE, zahlbetrag=109.9, rate="flex"))["html"]
     assert "Leistungen:" in h["text"] and "Gesamtbetrag" in h["text"] and "18.11.2026 3" in h["text"]
     he = render_mail(daten(leistungen=ROOM_EN, zahlbetrag=51.51, sprache="en"))
     assert "Services:" in he["html"] and "EUR 51.51" in he["html"]
@@ -635,7 +667,7 @@ def test_leistungen_mail_und_import():
         z = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90100'").fetchone()
         assert z["leistungen"].startswith("2026-11-18 3 x Frühstück") and z["zahlbetrag"] == 82.8
         d = mail_daten(z, SendKonfig(), ev.EventQuelle(""), date(2026, 11, 10))
-        assert "3 &times; 10-Bettzimmer gemischt" in render_mail(d)["html"]
+        assert "3 &times; Bett im 10-Bettzimmer gender-mixed, erstattbar" in render_mail(d)["html"]      # Rate FLEX
         assert leistungen_hinweis(z) is None
         k = conn.execute("SELECT * FROM arrivals WHERE reg_nummer='90101'").fetchone()
         assert "nicht lesbar" in leistungen_hinweis(k)

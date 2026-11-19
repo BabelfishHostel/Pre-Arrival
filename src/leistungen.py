@@ -25,8 +25,25 @@ POSITION = re.compile(
 # Artikelnamen aus ASSD, die für Gäste verständlicher benannt werden
 ARTIKEL_NAMEN = {
     "internet deposit": {"de": "Bereits über das Portal bezahlt", "en": "Already paid via the platform"},
+    "appartement": {"de": "Apartment für 4", "en": "Apartment for 4"},
+    "apartment": {"de": "Apartment für 4", "en": "Apartment for 4"},
 }
 DE_WOERTER = (("mixed", "gemischt"), ("female", "weiblich"), ("male", "männlich"))
+
+# Mehrbettzimmer: ASSD liefert "10-Bettzimmer mixed" (DE) bzw. "10 bed mixed room" (EN); gebucht werden Betten.
+MEHRBETT_DE = re.compile(r"^(\d+)-Bettzimmer (mixed|female|male)$", re.I)
+MEHRBETT_EN = re.compile(r"^(\d+) bed (mixed|female|male) room$", re.I)
+MEHRBETT_NAME = {
+    "de": {"mixed": "Bett im {n}-Bettzimmer gender-mixed", "female": "Bett im {n}-Bettzimmer für Frauen",
+           "male": "Bett im {n}-Bettzimmer für Männer"},
+    "en": {"mixed": "Bed in {n}-bed gender-mixed room", "female": "Bed in {n}-bed room for women",
+           "male": "Bed in {n}-bed room for men"},
+}
+# Rate -> Zusatz hinter Mehrbettzimmern (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
+RATE_ZUSATZ = {
+    "nrf": {"de": "nicht erstattbar", "en": "non-refundable"},
+    "flex": {"de": "erstattbar", "en": "refundable"},
+}
 
 
 @dataclass
@@ -62,15 +79,36 @@ def parse_leistungen(text: Optional[str]) -> Optional[List[Position]]:
     return sorted(positionen, key=lambda p: p.datum)    # stabil: Reihenfolge innerhalb eines Tags bleibt
 
 
+def _mehrbett(name: str):
+    m = MEHRBETT_DE.match(name.strip()) or MEHRBETT_EN.match(name.strip())
+    return m.groups() if m else None
+
+
+def ist_mehrbettzimmer(name: str) -> bool:
+    return _mehrbett(name) is not None
+
+
 def bezeichnung(name: str, sprache: str) -> str:
-    """Gästetaugliche Bezeichnung: Portal-Anzahlung umbenannt, im Deutschen 'mixed' -> 'gemischt' usw."""
-    bekannt = ARTIKEL_NAMEN.get(name.casefold())
+    """Gästetaugliche Bezeichnung: Mehrbettzimmer als 'Bett im 10-Bettzimmer gender-mixed', Portal-Anzahlung und
+    Apartment umbenannt, alles andere (Einzelzimmer, Doppelzimmer, 4-Bettzimmer privat ...) unverändert.
+    Unbekannte Namen: im Deutschen 'mixed' -> 'gemischt' usw., sonst wie geliefert."""
+    bekannt = ARTIKEL_NAMEN.get(name.strip().casefold())
     if bekannt:
         return bekannt.get(sprache, bekannt["en"])
+    mb = _mehrbett(name)
+    if mb:
+        n, art = mb
+        return MEHRBETT_NAME.get(sprache, MEHRBETT_NAME["en"])[art.lower()].format(n=n)
     if sprache == "de":
         for alt, neu in DE_WOERTER:
             name = re.sub(rf"\b{alt}\b", neu, name)
     return name
+
+
+def rate_zusatz(name: str, rate: Optional[str], sprache: str) -> str:
+    """', nicht erstattbar' / ', erstattbar' hinter Mehrbettzimmern, je nach Rate (NRF/FLEX), sonst leer."""
+    z = RATE_ZUSATZ.get(rate or "")
+    return f", {z.get(sprache, z['en'])}" if z and ist_mehrbettzimmer(name) else ""
 
 
 def _preis(betrag: float, sprache: str) -> str:
@@ -99,7 +137,8 @@ def gesamtsumme(positionen: List[Position], zahlbetrag: Optional[float]) -> Opti
     return summe if summe > 0 else None
 
 
-def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], sprache: str) -> str:
+def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], sprache: str,
+                    rate: Optional[str] = None) -> str:
     """Tabelle (Datum | Leistung | Betrag) mit Inline-Stilen für Mailclients."""
     zelle = "padding:6px 0; border-top:1px solid #e0ddd3; vertical-align:top;"
     zeilen = []
@@ -108,7 +147,7 @@ def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], spr
         if p.gesamt < 0 or p.anzahl < 0:
             titel, zusatz = name, ""
         else:
-            titel = f"{p.anzahl} &times; {name}"
+            titel = f"{p.anzahl} &times; {name}{html.escape(rate_zusatz(p.name, rate, sprache))}"
             teile = []
             if p.anzahl > 1:
                 teile.append(f"{p.anzahl} &times; {_preis(p.einzelpreis, sprache)}")
