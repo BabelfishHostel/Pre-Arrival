@@ -156,7 +156,10 @@ def storno_letzter_tag(d: MailDaten) -> date:
 
 
 def storno_variante(d: MailDaten) -> Optional[str]:
-    """Satz zur kostenfreien Stornierung: 'morgen', 'heute', 'datum' (später) oder None (abgelaufen)."""
+    """Satz zur kostenfreien Stornierung: 'morgen', 'heute', 'datum' (später) oder None (abgelaufen).
+    Rate NRF (nicht erstattbar): nie kostenfrei stornierbar, der Satz entfällt komplett."""
+    if (d.rate or "").lower() == "nrf":
+        return None
     tage = (storno_letzter_tag(d) - d.heute).days
     if tage < 0:
         return None

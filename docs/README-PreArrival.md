@@ -61,7 +61,7 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 | `storno_morgen` | letzter kostenfreier Tag ist morgen (Versand 4 Tage vor Anreise) | „Der Zeitraum für die kostenfreie Stornierung läuft morgen ab.“ |
 | `storno_heute` | letzter kostenfreier Tag ist heute (Normalfall bei Versand 3 Tage vor Anreise) | „… läuft heute ab.“ |
 | `storno_datum` | letzter kostenfreier Tag liegt später | „… läuft am *Di, 17. Nov* ab.“ |
-| (keiner) | Frist schon abgelaufen (Anreise heute, morgen oder in 2 Tagen) | der Satz entfällt |
+| (keiner) | Frist schon abgelaufen (Anreise heute, morgen oder in 2 Tagen) **oder Rate `NRF`** (nicht erstattbar: nie kostenfrei stornierbar) | der Satz entfällt komplett |
 
 **Zahlungsbereich** (Überschrift „Zahlung“, Einleitungssatz, Button „Jetzt bezahlen“) erscheint, wenn die CSV einen `Paylink` enthält, oder (ohne Paylink) wenn die Buchung komplett bezahlt ist. Der Einleitungssatz hängt vom Zahlstand ab (Reihenfolge der Prüfung):
 

@@ -56,6 +56,14 @@ def test_bloecke():
     for tage_vor, erwartet in ((5, "datum"), (4, "morgen"), (3, "heute"), (2, None), (1, None), (0, None)):
         d0 = daten(heute=ANREISE - timedelta(days=tage_vor))
         assert storno_variante(d0) == erwartet, tage_vor
+        # Rate NRF: nie kostenfrei stornierbar -> Satz entfällt in jedem Fall, FLEX/FIX/leer unverändert
+        for r in ("nrf", "NRF"):
+            assert storno_variante(daten(heute=d0.heute, rate=r)) is None, (tage_vor, r)
+        for r in ("flex", "fix", None):
+            assert storno_variante(daten(heute=d0.heute, rate=r)) == erwartet, (tage_vor, r)
+        for sprache, text in (("de", "kostenfreie Stornierung"), ("en", "free cancellation")):
+            h = render_mail(daten(heute=d0.heute, sprache=sprache, rate="nrf"))["html"]
+            assert text not in h and "{{" not in h and "BLOCK" not in h, (tage_vor, sprache)
         for sprache in ("de", "en"):
             h = render_mail(daten(heute=d0.heute, sprache=sprache))["html"]
             assert all(t in h for t in fest[sprache]), (tage_vor, sprache)
@@ -414,6 +422,8 @@ def test_csv_2026_11():
             assert ("auf der Du gebucht hast" in h or "the website you booked on" in h) == ota, reg
             # letzter kostenfreier Tag = Anreise - 3: Versand 10.11. -> Anreise 13.11. "heute", 14.11. "morgen", später Datum
             soll = {date(2026, 11, 13): "heute", date(2026, 11, 14): "morgen"}.get(d.anreise, "datum")
+            if d.rate == "nrf":
+                soll = None            # NRF: nie kostenfrei stornierbar
             assert storno_variante(d) == soll, reg
             assert ("läuft heute ab" in h) == (soll == "heute" and d.sprache == "de"), reg
             assert "{{" not in h
