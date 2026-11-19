@@ -39,7 +39,7 @@ MEHRBETT_NAME = {
     "en": {"mixed": "Bed in {n}-bed gender-mixed room", "female": "Bed in {n}-bed female only room",
            "male": "Bed in {n}-bed male only room"},
 }
-# Rate -> Zusatz hinter Mehrbettzimmern (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
+# Rate -> Zusatz hinter jedem Zimmer (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
 RATE_ZUSATZ = {
     "nrf": {"de": "nicht erstattbar", "en": "non-refundable"},
     "flex": {"de": "erstattbar", "en": "refundable"},
@@ -105,10 +105,18 @@ def bezeichnung(name: str, sprache: str) -> str:
     return name
 
 
+ZIMMER = re.compile(r"zimmer|room|apartment|appartement|studio|bettzimmer|\bbed\b", re.I)
+
+
+def ist_zimmer(name: str) -> bool:
+    """Zimmerartikel (alle Zimmertypen), nicht Frühstück, Schlafcouch, Portal-Abzug o. ä."""
+    return bool(ZIMMER.search(name)) or name.strip().casefold() in ("appartement", "apartment")
+
+
 def rate_zusatz(name: str, rate: Optional[str], sprache: str) -> str:
-    """', nicht erstattbar' / ', erstattbar' hinter Mehrbettzimmern, je nach Rate (NRF/FLEX), sonst leer."""
+    """', nicht erstattbar' / ', erstattbar' hinter jedem Zimmer, je nach Rate (NRF/FLEX), sonst leer."""
     z = RATE_ZUSATZ.get(rate or "")
-    return f", {z.get(sprache, z['en'])}" if z and ist_mehrbettzimmer(name) else ""
+    return f", {z.get(sprache, z['en'])}" if z and ist_zimmer(name) else ""
 
 
 def _preis(betrag: float, sprache: str) -> str:

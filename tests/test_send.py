@@ -617,7 +617,13 @@ def test_leistungen():
     assert rate_zusatz("10 bed mixed room", "flex", "en") == ", refundable"
     for keins in (None, "fix", "ota"):
         assert rate_zusatz("10-Bettzimmer mixed", keins, "de") == "", keins
-    assert rate_zusatz("Doppelzimmer", "nrf", "de") == "" and rate_zusatz("Frühstück", "flex", "de") == ""
+    assert rate_zusatz("Doppelzimmer", "nrf", "de") == ", nicht erstattbar"
+    assert rate_zusatz("Einzelzimmer", "flex", "de") == ", erstattbar"
+    assert rate_zusatz("Apartment", "nrf", "en") == ", non-refundable" and rate_zusatz("Appartement", "flex", "de") == ", erstattbar"
+    assert rate_zusatz("6-Bettzimmer privat", "nrf", "de") == ", nicht erstattbar"
+    assert rate_zusatz("Double room", "flex", "en") == ", refundable"
+    for kein in ("Frühstück", "Schlafcouch", "Internet Deposit", "Breakfast"):
+        assert rate_zusatz(kein, "nrf", "de") == "" and rate_zusatz(kein, "flex", "en") == "", kein
     assert bezeichnung("Internet Deposit", "de") == "Bereits über das Portal bezahlt"
     assert bezeichnung("Internet Deposit", "en") == "Already paid via the platform"
     de = leistungen_html(pos, 109.9, "de")
