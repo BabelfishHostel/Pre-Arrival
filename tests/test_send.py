@@ -319,7 +319,7 @@ def test_migration():
         init_db(conn)
         spalten = {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
         assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag", "leistungen"} <= spalten
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
         init_db(conn)  # idempotent
         conn.close()
 
@@ -827,6 +827,42 @@ def test_mehrfach_aufenthalt():
         e = verarbeite(conn, k, q, HEUTE, "live", kaputt)
         assert e.fehler == 1 and e.gesendet == 0, e
         assert conn.execute("SELECT status FROM mail_log m JOIN arrivals a ON a.id=m.arrival_id WHERE a.reg_nummer='4'").fetchone()[0] == "fehler"
+
+
+def test_vcc():
+    from run_send import mail_daten, zahlung_hinweis
+    """CSV-Spalte VCC = yes: Buchung ist mit virtueller Kreditkarte bezahlt -> Bereich 'bezahlt', kein Paylink/Button."""
+    from csv_import import _vcc, importiere_csv
+    assert [_vcc(x) for x in ("yes", "Yes", "ja", "1", "no", "", None, "nein")] == [1, 1, 1, 1, 0, 0, 0, 0]
+    # Paylink und offener Restbetrag in der CSV, aber VCC: bezahlt
+    d = daten(vcc=True, schon_eingegangen=None, restbetrag=17.74, zahlbetrag=17.74, voraus_datum=None, kanal="CTR")
+    assert zahlung_variante(d) == "bezahlt" and zahlung_aktiv(d)
+    d_de = render_mail(d)["html"]
+    assert "Deine Buchung ist bereits komplett bezahlt." in d_de and "Jetzt bezahlen" not in d_de and "pay.example" not in d_de
+    h_en = render_mail(daten(vcc=True, sprache="en", voraus_datum=None))["html"]
+    assert "paid in full" in h_en and "Pay now" not in h_en and "pay.example" not in h_en
+    # ohne VCC bleibt alles wie bisher
+    assert zahlung_variante(daten(vcc=False, voraus_datum=None, restbetrag=17.74, zahlbetrag=17.74)) == "gesamt"
+    # Import: Spalte VCC zwischen Schon_eingegangen und Restbetrag, Reihenfolge der Spalten egal
+    kopf = KOPF_NEU.replace(";Restbetrag", ";VCC;Restbetrag")
+    z1 = "     91001;;111;2026-11-22 00:00:00;2026-11-23 00:00:00;2026-10-19;1;Pia;Test;;;;a@example.com;E;CTR;OTA;0.00;0000-00-00;0.00;yes;17.74;17.74;https://pay.example/1"
+    z2 = "     91002;;112;2026-11-22 00:00:00;2026-11-23 00:00:00;2026-10-19;1;Paul;Test;;;;b@example.com;E;BHC;OTA;0.00;0000-00-00;0.00;no;20.16;20.16;https://pay.example/2"
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "v.sqlite")
+        init_db(conn)
+        pfad = Path(tmp) / "v.csv"
+        pfad.write_bytes("\r\n".join([kopf, z1, z2]).encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert (e.neu, e.fehler) == (2, 0), e
+        v = {r["reg_nummer"]: r["vcc"] for r in conn.execute("SELECT reg_nummer, vcc FROM arrivals")}
+        assert v == {"91001": 1, "91002": 0}, v
+        k = SendKonfig()
+        q = ev.EventQuelle("")
+        for reg, soll in (("91001", "bezahlt"), ("91002", "gesamt")):
+            row = conn.execute("SELECT * FROM arrivals WHERE reg_nummer=?", (reg,)).fetchone()
+            dd = mail_daten(row, k, q, date(2026, 11, 19))
+            assert zahlung_variante(dd) == soll, (reg, zahlung_variante(dd))
+            assert zahlung_hinweis(row) is None, reg
 
 
 if __name__ == "__main__":

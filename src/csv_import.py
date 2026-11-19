@@ -108,6 +108,11 @@ def _betrag(text: Optional[str]) -> Optional[float]:
     return wert if wert > 0 else None
 
 
+def _vcc(text: Optional[str]) -> int:
+    """Spalte VCC (virtuelle Kreditkarte): 'yes'/'ja'/'1'/'true' -> 1, sonst (auch leer oder fehlende Spalte) 0."""
+    return 1 if (text or "").strip().lower() in ("yes", "y", "ja", "j", "1", "true", "wahr") else 0
+
+
 def _paylink(text: Optional[str]) -> Optional[str]:
     """Nur http(s)-Links werden übernommen."""
     t = (text or "").strip()
@@ -179,17 +184,18 @@ def _zeile_lesen(zeile: dict) -> dict:
         "restbetrag": _betrag(zeile.get("Restbetrag")),
         "zahlbetrag": _betrag(zeile.get("Zahlbetrag")),
         "leistungen": (zeile.get("room") or "").strip() or None,    # roh, siehe leistungen.py
+        "vcc": _vcc(zeile.get("VCC")),
     }
 
 
 UPSERT = """
 INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise,
                       buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer,
-                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, leistungen, import_id,
+                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, leistungen, vcc, import_id,
                       erstmals_importiert, zuletzt_gesehen)
 VALUES (:reg_nummer, :vorname, :nachname, :email, :anreise, :abreise,
         :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer,
-        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag, :leistungen,
+        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag, :leistungen, :vcc,
         :import_id, :jetzt, :jetzt)
 ON CONFLICT(reg_nummer) DO UPDATE SET
     vorname = excluded.vorname,           nachname = excluded.nachname,
@@ -200,7 +206,7 @@ ON CONFLICT(reg_nummer) DO UPDATE SET
     buchungsnummer = excluded.buchungsnummer, paylink = excluded.paylink,
     vorauszahlung = excluded.vorauszahlung, vorausdatum = excluded.vorausdatum,
     schon_eingegangen = excluded.schon_eingegangen, restbetrag = excluded.restbetrag,
-    zahlbetrag = excluded.zahlbetrag,     leistungen = excluded.leistungen,
+    zahlbetrag = excluded.zahlbetrag,     leistungen = excluded.leistungen, vcc = excluded.vcc,
     import_id = excluded.import_id,       zuletzt_gesehen = excluded.zuletzt_gesehen
 """
 

@@ -101,6 +101,7 @@ class MailDaten:
     schon_eingegangen: Optional[float] = None   # bisher bezahlt (CSV Schon_eingegangen), leer = 0
     zahlbetrag: Optional[float] = None      # Gesamtbetrag (CSV Zahlbetrag)
     restbetrag: Optional[float] = None      # offener Rest (CSV Restbetrag), leer = 0
+    vcc: bool = False                       # CSV VCC = yes: mit virtueller Kreditkarte schon bezahlt
     leistungen: Optional[str] = None        # CSV room (roh); leer/unlesbar = kein Leistungsbereich
     kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
     rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
@@ -120,7 +121,8 @@ def ota_buchung(d: MailDaten) -> bool:
 def zahlung_variante(d: MailDaten) -> Optional[str]:
     """Wählt den Zahlungsbereich: None, 'anzahlung', 'rest', 'gesamt' oder 'bezahlt'.
 
-    * 'bezahlt' (ohne Paylink, ohne Button): alles komplett bezahlt, egal welcher Kanal.
+    * 'bezahlt' (ohne Paylink, ohne Button): alles komplett bezahlt, egal welcher Kanal. Dazu zählt auch VCC = yes
+      (mit virtueller Kreditkarte bezahlt): hat Vorrang, ein evtl. vorhandener Paylink wird nicht angezeigt.
 
     Die Zahlungslogik liegt weitgehend bei ASSD (Spalten der CSV); Kanal und Rate zählen nur
     für den Sonderfall Website-Flex (siehe 'anzahlung').
@@ -131,6 +133,8 @@ def zahlung_variante(d: MailDaten) -> Optional[str]:
       ODER (Sonderfall) die Buchung über die eigene Website kommt (Kanal EGB) und die Rate FLEX ist.
     * Sonst: 'gesamt' (keine Anzahlung nötig, Buchung kann im Voraus bezahlt werden).
     """
+    if d.vcc:
+        return "bezahlt"
     if not d.paymentlink:
         return "bezahlt" if komplett_bezahlt(d) else None
     if (d.schon_eingegangen or 0) > 0:
@@ -189,7 +193,7 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     variante = zahlung_variante(d)
     if variante:
         text = _block_behalten(text, "zahlung")
-        text = _block_behalten(text, "zahlung_button") if d.paymentlink else _block_entfernen(text, "zahlung_button")
+        text = _block_behalten(text, "zahlung_button") if d.paymentlink and variante != "bezahlt" else _block_entfernen(text, "zahlung_button")
         for name in ("anzahlung", "rest", "gesamt", "bezahlt"):
             blk = f"zahlung_{name}"
             text = _block_behalten(text, blk) if name == variante else _block_entfernen(text, blk)
@@ -220,7 +224,7 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     }
     if positionen:
         werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s, d.rate)
-    if variante and d.paymentlink:
+    if variante and variante != "bezahlt" and d.paymentlink:
         werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():
         text = text.replace("{{" + key + "}}", wert)

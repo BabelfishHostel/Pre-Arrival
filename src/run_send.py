@@ -118,6 +118,8 @@ def zahlung_hinweis(z: sqlite3.Row) -> Optional[str]:
 
     Die Mail geht in jedem Fall raus; die Entscheidung über den Zahlungsbereich fällt allein am Paylink.
     """
+    if "vcc" in z.keys() and z["vcc"]:
+        return None                       # VCC: bezahlt, Restbetrag/Paylink der CSV sind hier belanglos
     rest = z["restbetrag"] or 0
     if z["paylink"] and rest <= 0:
         return "Paylink, aber Restbetrag 0 - Zahlungsbereich wird trotzdem angezeigt"
@@ -190,7 +192,7 @@ def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) 
         voraus_datum=date.fromisoformat(z["vorausdatum"]) if z["vorausdatum"] else None,
         kanal=(z["kanal"] or "").strip().upper() or None, rate=z["rate"],
         schon_eingegangen=z["schon_eingegangen"], zahlbetrag=z["zahlbetrag"], restbetrag=z["restbetrag"],
-        leistungen=z["leistungen"],
+        leistungen=z["leistungen"], vcc=bool(z["vcc"]),
         storno_tage=k.storno_tage,
     )
 
