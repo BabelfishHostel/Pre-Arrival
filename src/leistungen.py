@@ -15,8 +15,8 @@ Die Spalte wird roh in der Datenbank gespeichert und erst beim Erzeugen der Mail
 import html
 import re
 from dataclasses import dataclass
-from datetime import date
-from typing import List, Optional
+from datetime import date, timedelta
+from typing import List, Optional, Tuple
 
 POSITION = re.compile(
     r"^(\d{4}-\d{2}-\d{2}) (-?\d+) x (.+?) (-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)$"
@@ -178,3 +178,20 @@ def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], spr
             f"<strong>{_preis(summe, sprache)}</strong></td></tr>"
         )
     return '<table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;">' + "".join(zeilen) + "</table>"
+
+
+def aufenthalte(positionen: List[Position]) -> List[Tuple[date, date]]:
+    """Zusammenhängende Zimmer-Nächte als (erste Nacht, letzte Nacht).
+
+    Ein Zimmerwechsel innerhalb des Aufenthalts (mehrere Pfade in ASSD) bleibt lückenlos und ist ein Aufenthalt.
+    Mehr als einer bedeutet: Es fehlen Nächte dazwischen, die Buchung enthält vermutlich einen zweiten,
+    späteren Aufenthalt. Frühstück, Abzüge usw. zählen nicht.
+    """
+    tage = sorted({p.datum for p in positionen if p.anzahl > 0 and p.gesamt >= 0 and ist_zimmer(p.name)})
+    ergebnis: List[Tuple[date, date]] = []
+    for t in tage:
+        if ergebnis and t - ergebnis[-1][1] <= timedelta(days=1):
+            ergebnis[-1] = (ergebnis[-1][0], t)
+        else:
+            ergebnis.append((t, t))
+    return ergebnis

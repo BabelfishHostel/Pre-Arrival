@@ -764,6 +764,71 @@ def test_gleiche_csv_erneut():
         conn.close()
 
 
+def test_mehrfach_aufenthalt():
+    """Zwei getrennte Aufenthalte in einer Buchung: keine Gästemail, Warn-Mail an die Absenderadresse, einmalig."""
+    from leistungen import aufenthalte, parse_leistungen
+    from run_send import mehrfach_aufenthalte
+    zimmer = "{d} 1 x 10-Bettzimmer mixed 29.40 10.00 26.46"
+    spaet = "|".join(zimmer.format(d=d) for d in ("2026-10-09", "2026-10-10", "2026-12-12"))
+    lueckenlos = "|".join(zimmer.format(d=d) for d in ("2026-10-09", "2026-10-10", "2026-10-11"))
+    wechsel = ("2026-10-09 1 x Einzelzimmer 50.00 0.00 50.00|2026-10-09 2 x Frühstück 8.00 0.00 16.00"
+               "|2026-10-10 1 x Doppelzimmer 70.00 0.00 70.00|2026-10-10 -1 x Internet Deposit 9.09 0.00 -9.09")
+    assert aufenthalte(parse_leistungen(spaet)) == [(date(2026, 10, 9), date(2026, 10, 10)), (date(2026, 12, 12), date(2026, 12, 12))]
+    assert len(aufenthalte(parse_leistungen(lueckenlos))) == 1
+    assert len(aufenthalte(parse_leistungen(wechsel))) == 1            # Zimmerwechsel ohne Lücke, Frühstück/Abzug zählen nicht
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "t.sqlite")
+        init_db(conn)
+        _gast(conn, "1", "Normal")
+        _gast(conn, "2", "Doppelt", email_="d@example.com")
+        _gast(conn, "3", "Wechsel", email_="w@example.com")
+        for reg, roh in (("1", lueckenlos), ("2", spaet), ("3", wechsel)):
+            conn.execute("UPDATE arrivals SET leistungen=?, buchungsnummer=? WHERE reg_nummer=?", (roh, "13" + reg, reg))
+        conn.commit()
+        assert mehrfach_aufenthalte(conn.execute("SELECT * FROM arrivals WHERE reg_nummer='2'").fetchone())
+        k = SendKonfig(absender="info@hostel.example", vorschau_dir=Path(tmp) / "v")
+        q = ev.EventQuelle("")
+        e = verarbeite(conn, k, q, HEUTE, "dry")
+        assert (e.vorschau, e.warnungen, e.fehler) == (2, 1, 0), e
+        warn = (Path(tmp) / "v" / "WARNUNG_2.txt").read_text(encoding="utf-8")
+        assert "132" in warn and "12.12.2026" in warn and "NICHT" in warn and "d@example.com" not in warn
+        assert not (Path(tmp) / "v" / "2_de.html").exists()
+
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg)
+            return msg["Message-ID"]
+        e = verarbeite(conn, k, q, HEUTE, "test", sender, "test@example.com")
+        assert e.gesendet == 2 and e.warnungen == 1 and all(m["To"] == "test@example.com" for m in gesendet)
+        assert any("nicht verschickt" in m["Subject"] and m["Subject"].startswith("[TEST]") for m in gesendet)
+        gesendet.clear()
+
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        an = sorted(m["To"] for m in gesendet)
+        assert an == ["a@example.com", "info@hostel.example", "w@example.com"], an       # Gast 2 bekommt keine Mail
+        assert not any(m["To"] == "d@example.com" for m in gesendet)
+        st = conn.execute("SELECT status, fehler FROM mail_log m JOIN arrivals a ON a.id=m.arrival_id WHERE a.reg_nummer='2'").fetchone()
+        assert st["status"] == "uebersprungen" and st["fehler"].startswith("Mehrere Aufenthalte"), dict(st)
+        # einmalig: zweiter Lauf schickt keine weitere Warnung
+        gesendet.clear()
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert gesendet == [] and e.warnungen == 0, e
+        # in ASSD korrigiert (Lücke weg): Sperre fällt, Gast bekommt die Mail
+        conn.execute("UPDATE arrivals SET leistungen=? WHERE reg_nummer='2'", (lueckenlos,))
+        conn.commit()
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert [m["To"] for m in gesendet] == ["d@example.com"] and e.warnungen == 0, [m["To"] for m in gesendet]
+        # Versand der Warn-Mail schlägt fehl: Gast bleibt offen (fehler), kein Gästemail
+        _gast(conn, "4", "Doppelt2", email_="x@example.com")
+        conn.execute("UPDATE arrivals SET leistungen=? WHERE reg_nummer='4'", (spaet,))
+        conn.commit()
+        def kaputt(msg):
+            raise VersandFehler("HTTP 503", False)
+        e = verarbeite(conn, k, q, HEUTE, "live", kaputt)
+        assert e.fehler == 1 and e.gesendet == 0, e
+        assert conn.execute("SELECT status FROM mail_log m JOIN arrivals a ON a.id=m.arrival_id WHERE a.reg_nummer='4'").fetchone()[0] == "fehler"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

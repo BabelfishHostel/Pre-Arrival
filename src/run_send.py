@@ -13,6 +13,9 @@ Gast steht im letzten CSV-Import (wer dort fehlt, wurde storniert oder verschobe
 und für die Vorlage gibt es noch keinen 'gesendet'/'uebersprungen'-Eintrag.
 Ist der letzte CSV-Import älter als MAX_IMPORT_ALTER_TAGE (Standard 0 = nur heute), sendet --live
 nichts und endet mit Fehler (Exit-Code 1); Trockenlauf und Test warnen nur.
+Enthält die Leistungsliste (room) mehrere getrennte Aufenthalte (Lücke zwischen den Zimmer-Nächten), geht
+keine Gästemail raus; stattdessen eine Warn-Mail an SEND_ABSENDER (einmalig, danach 'uebersprungen').
+Ist die Buchung später lückenlos, wird die Sperre automatisch aufgehoben.
 Fehlgeschlagene Mails ('fehler') werden beim nächsten Lauf erneut versucht
 (höchstens MAX_VERSUCHE). Ein Eintrag, der bei 'geplant' hängen blieb (Absturz
 mitten im Versand), wird NICHT automatisch wiederholt, um Doppelmails zu vermeiden.
@@ -60,6 +63,7 @@ class SendErgebnis:
     gesendet: int = 0
     vorschau: int = 0
     uebersprungen: int = 0
+    warnungen: int = 0
     fehler: int = 0
     details: List[str] = field(default_factory=list)
 
@@ -130,6 +134,50 @@ def leistungen_hinweis(z: sqlite3.Row) -> Optional[str]:
     return None
 
 
+MEHRFACH = "Mehrere Aufenthalte in einer Buchung"
+
+
+def mehrfach_aufenthalte(z: sqlite3.Row):
+    """Liste der Aufenthalte (erste, letzte Nacht), wenn die Leistungsliste mehrere getrennte Aufenthalte
+    enthält (Lücke zwischen den Zimmer-Nächten), sonst None. Nicht lesbare/leere Liste: None."""
+    from leistungen import aufenthalte, parse_leistungen
+    positionen = parse_leistungen(z["leistungen"]) if z["leistungen"] else None
+    if not positionen:
+        return None
+    a = aufenthalte(positionen)
+    return a if len(a) > 1 else None
+
+
+def warn_mail(k: SendKonfig, z: sqlite3.Row, stays, an: str, test: bool = False):
+    """Warn-Mail an das Hostel (nur Buchungsdaten, keine Gästeadresse). Gibt (MIME, Text) zurück."""
+    nr = z["buchungsnummer"] or z["reg_nummer"]
+    fmt = lambda d: d.strftime("%d.%m.%Y")  # noqa: E731
+    zeilen = [f"  {i}. Aufenthalt: Nacht vom {fmt(a)} bis {fmt(b)} ({(b - a).days + 1} Nacht/Nächte)"
+              for i, (a, b) in enumerate(stays, 1)]
+    text = (
+        f"Die Pre-Arrival-Mail für Buchung {nr} (RegNummer {z['reg_nummer']}) wurde NICHT an den Gast verschickt.\n\n"
+        f"Die Buchung enthält mehrere getrennte Aufenthalte (Lücke zwischen den gebuchten Nächten), "
+        f"vermutlich eine spätere Buchung, die in ASSD als weiterer Pfad angelegt wurde:\n"
+        + "\n".join(zeilen) + "\n\n"
+        f"CSV-Anreise {z['anreise']}, Abreise {z['abreise']}.\n\n"
+        "Bitte in ASSD prüfen und den späteren Aufenthalt als eigene Buchung anlegen. Ändert sich die Buchung, "
+        "wird beim nächsten Lauf (Cronjob) automatisch neu geprüft und die Mail verschickt, "
+        "sobald keine Lücke mehr besteht. Ist alles korrekt so, bitte dem Gast manuell schreiben."
+    )
+    betreff = f"{'[TEST] ' if test else ''}Pre-Arrival: Buchung {nr} nicht verschickt - mehrere Aufenthalte"
+    html_text = "<p>" + text.replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>") + "</p>"
+    return baue_mime(k.absender, an, betreff, html_text, text), text
+
+
+def warnung_aufheben(conn: sqlite3.Connection, heute: date, tage: int) -> None:
+    """Hebt 'Mehrere Aufenthalte'-Sperren auf, wenn die Buchung inzwischen lückenlos ist (z. B. in ASSD korrigiert)."""
+    for z in _gaeste_im_fenster(conn, heute, tage):
+        if z["m_status"] == "uebersprungen" and not mehrfach_aufenthalte(z):
+            with conn:
+                conn.execute("DELETE FROM mail_log WHERE arrival_id=? AND vorlage=? AND fehler LIKE ?",
+                             (z["id"], VORLAGE, MEHRFACH + "%"))
+
+
 def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) -> MailDaten:
     sprache = z["sprache"] if z["sprache"] in ("de", "en") else k.sprache_standard
     anreise = date.fromisoformat(z["anreise"])
@@ -185,6 +233,8 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
                 "(storniert oder verschoben?) - keine Mail")
         erg.details.append(text)
         log.info("%s", text)
+    if modus == "live":
+        warnung_aufheben(conn, heute, k.tage_vorher)
     for z in faellige_gaeste(conn, heute, k.tage_vorher):
         ref = f"Gast {z['reg_nummer']} (Anreise {z['anreise']})"
         if modus == "live" and z["m_status"] == "geplant" and z["m_versuche"] > 0:
@@ -200,6 +250,36 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
                 _log_setzen(conn, z["id"], "uebersprungen", fehler="ungültige E-Mail-Adresse")
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: ungültige E-Mail-Adresse")
+            continue
+        stays = mehrfach_aufenthalte(z)
+        if stays:
+            erg.uebersprungen += 1
+            erg.warnungen += 1
+            erg.details.append(f"{ref}: {MEHRFACH} ({len(stays)} Aufenthalte) - keine Gästemail, Warn-Mail an {k.absender}")
+            log.warning("%s: %s - keine Gästemail", ref, MEHRFACH)
+            if modus == "dry":
+                if k.vorschau_dir:
+                    k.vorschau_dir.mkdir(parents=True, exist_ok=True)
+                    (k.vorschau_dir / f"WARNUNG_{z['reg_nummer']}.txt").write_text(
+                        warn_mail(k, z, stays, k.absender)[1], encoding="utf-8")
+                continue
+            wmsg, _ = warn_mail(k, z, stays, test_an if modus == "test" else k.absender, test=modus == "test")
+            if modus == "live":
+                _log_planen(conn, z["id"])
+                with conn:
+                    conn.execute("UPDATE mail_log SET versuche = versuche + 1 WHERE arrival_id=? AND vorlage=?",
+                                 (z["id"], VORLAGE))
+            try:
+                sender(wmsg)
+            except VersandFehler as exc:
+                erg.fehler += 1
+                erg.details.append(f"{ref}: Warn-Mail fehlgeschlagen: {exc}")
+                log.error("%s: Warn-Mail fehlgeschlagen: %s", ref, exc)
+                if modus == "live":
+                    _log_setzen(conn, z["id"], "fehler", fehler=f"Warn-Mail: {exc}"[:500])
+                continue
+            if modus == "live":
+                _log_setzen(conn, z["id"], "uebersprungen", fehler=f"{MEHRFACH}, Warn-Mail gesendet")
             continue
         hinweis = zahlung_hinweis(z) or leistungen_hinweis(z)
         if hinweis:
@@ -302,8 +382,8 @@ def main(argv: Optional[List[str]] = None, env_pfad: Optional[Path] = None) -> i
         erg = verarbeite(conn, k, events, heute, modus, sender, a.test_an)
     finally:
         conn.close()
-    log.info("Modus %s: %d gesendet, %d Vorschau, %d übersprungen, %d Fehler",
-             modus, erg.gesendet, erg.vorschau, erg.uebersprungen, erg.fehler)
+    log.info("Modus %s: %d gesendet, %d Vorschau, %d übersprungen (davon %d Warnungen), %d Fehler",
+             modus, erg.gesendet, erg.vorschau, erg.uebersprungen, erg.warnungen, erg.fehler)
     for zeile in erg.details:
         log.warning(zeile)
     return 1 if erg.fehler else 0
