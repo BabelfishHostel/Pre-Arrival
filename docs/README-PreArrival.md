@@ -32,6 +32,7 @@ Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enth�
 | `Vorausdatum_1` | Datum, bis zu dem die Vorauszahlung fällig ist; immer gesetzt, wenn eine Vorauszahlung nötig ist; `0000-00-00` = nicht gesetzt |
 | `Schon_eingegangen` | bisher bezahlter Betrag |
 | `VCC` | `yes` = Buchung ist mit virtueller Kreditkarte bereits bezahlt (alles andere, auch fehlende Spalte: nein); wird als 0/1 gespeichert (Schema v6, Migration automatisch) |
+| `CHECKIO` | `1` = Gast ist bereits eingecheckt: keine Mail (Log `uebersprungen`, „bereits eingecheckt“); leer/0 = nicht eingecheckt; wird als 0/1 gespeichert (Schema v7). Die Spalte `CHECKIN` (enthält `O`) wird nicht ausgewertet |
 | `Zahlbetrag`, `Restbetrag` | Gesamtbetrag und offener Rest (`Zahlbetrag` − `Schon_eingegangen`); werden gespeichert, nicht angezeigt |
 | `room` | Leistungsliste, Einträge getrennt mit `\|`: `Datum Anzahl x Artikelname Einzelpreis Rabatt rabattierter-Gesamtpreis`, z. B. `2026-11-18 3 x 10-Bettzimmer mixed 21.89 10.00 59.10`. Rabatt in Prozent, Gesamtpreis gilt für alle Einheiten. Artikel sind Zimmer, Frühstück und Abzüge (negative Menge, z. B. `Internet Deposit` = vom Portal schon kassiert). Die Summe aller Gesamtpreise ergibt `Zahlbetrag` (an 36 Testzeilen geprüft). Wird roh gespeichert, in der Mail als Tabelle angezeigt |
 | `Paylink` | persönlicher Zahlungslink; **leer = kein Zahlungsbereich** |
@@ -154,6 +155,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Neues CSV-Format und Zahlungstexte inkl. Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext) in den Vorschauen geprüft und in Ordnung (12.11.2026)
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
+- Bereits eingecheckte Gäste: neue CSV-Spalte `CHECKIO`, bei 1 keine Mail (20.11.2026)
 - VCC (virtuelle Kreditkarte): neue CSV-Spalte `VCC` (yes = bezahlt) -> Zahlungsbereich „bereits komplett bezahlt“, ohne Button (19.11.2026)
 - Mehrere Aufenthalte in einer Buchung: keine Gästemail, Warn-Mail an SEND_ABSENDER (19.11.2026)
 - Stornierte/verschobene Buchungen: Versand nur an Gäste aus dem letzten CSV-Import, Aktualitätsprüfung `MAX_IMPORT_ALTER_TAGE` (17.11.2026)

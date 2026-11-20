@@ -319,7 +319,7 @@ def test_migration():
         init_db(conn)
         spalten = {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
         assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag", "leistungen"} <= spalten
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
         init_db(conn)  # idempotent
         conn.close()
 
@@ -863,6 +863,42 @@ def test_vcc():
             dd = mail_daten(row, k, q, date(2026, 11, 19))
             assert zahlung_variante(dd) == soll, (reg, zahlung_variante(dd))
             assert zahlung_hinweis(row) is None, reg
+
+
+def test_eingecheckt():
+    """CHECKIO = 1: Gast ist schon eingecheckt, keine Mail (im Live-Lauf als 'uebersprungen' protokolliert)."""
+    from csv_import import _eingecheckt, importiere_csv
+    assert [_eingecheckt(z) for z in ({"CHECKIO": "1"}, {"CHECKIN": "O", "CHECKIO": "1"}, {"CHECKIN": "O", "CHECKIO": "0"},
+                                      {"CHECKIN": "O", "CHECKIO": ""}, {"CHECKIN": "1"}, {})] == [1, 1, 0, 0, 0, 0]
+    kopf = KOPF_NEU.replace(";Restbetrag", ";CHECKIN;CHECKIO;Restbetrag")
+    z = "     {r};;1;2026-10-09 00:00:00;2026-10-11 00:00:00;2026-10-02;1;{n};Test;;;;{m}@example.com;E;;;0.00;0000-00-00;0.00;{ci};{io};20.00;20.00;https://pay.example/{r}"
+    zeilen = [z.format(r="92001", n="Drin", m="a", ci="O", io="1"), z.format(r="92002", n="Drin2", m="b", ci="", io="1"),
+              z.format(r="92003", n="Draussen", m="c", ci="O", io="0")]
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "c.sqlite")
+        init_db(conn)
+        pfad = Path(tmp) / "c.csv"
+        pfad.write_bytes("\r\n".join([kopf] + zeilen).encode("utf-8"))
+        e = importiere_csv(conn, pfad)
+        assert (e.neu, e.fehler) == (3, 0), e
+        assert {r["reg_nummer"]: r["eingecheckt"] for r in conn.execute("SELECT reg_nummer, eingecheckt FROM arrivals")} == \
+            {"92001": 1, "92002": 1, "92003": 0}
+        k = SendKonfig(vorschau_dir=Path(tmp) / "v")
+        q = ev.EventQuelle("")
+        e = verarbeite(conn, k, q, HEUTE, "dry")
+        assert (e.vorschau, e.uebersprungen) == (1, 2), e
+        assert (Path(tmp) / "v" / "92003_en.html").is_file() and not (Path(tmp) / "v" / "92001_en.html").exists()
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg)
+            return msg["Message-ID"]
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert [m["To"] for m in gesendet] == ["c@example.com"] and e.gesendet == 1 and e.uebersprungen == 2, e
+        st = {r["reg_nummer"]: (r["status"], r["fehler"]) for r in conn.execute(
+            "SELECT a.reg_nummer, m.status, m.fehler FROM mail_log m JOIN arrivals a ON a.id=m.arrival_id")}
+        assert st["92001"] == ("uebersprungen", "bereits eingecheckt") and st["92003"][0] == "gesendet", st
+        gesendet.clear()
+        assert verarbeite(conn, k, q, HEUTE, "live", sender).gesendet == 0 and gesendet == []
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS import_log (
@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS arrivals (
     zahlbetrag          REAL,               -- CSV Zahlbetrag: Gesamtpreis
     leistungen          TEXT,               -- CSV room (roh): Zimmer, Frühstück, Rabatte; Zerlegung beim Mailversand
     vcc                 INTEGER,            -- CSV VCC: 1 = mit virtueller Kreditkarte schon bezahlt
+    eingecheckt         INTEGER,            -- CSV CHECKIN/CHECKIO: 1 = Gast ist bereits eingecheckt (keine Mail)
     import_id           INTEGER REFERENCES import_log(id),
     erstmals_importiert TEXT    NOT NULL,
     zuletzt_gesehen     TEXT    NOT NULL
@@ -108,7 +109,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         for name, typ in (("rate", "TEXT"), ("buchungsnummer", "TEXT"), ("betrag", "REAL"),
                           ("gesamtbetrag", "REAL"), ("paylink", "TEXT"), ("vorauszahlung", "REAL"),
                           ("vorausdatum", "TEXT"), ("schon_eingegangen", "REAL"), ("restbetrag", "REAL"),
-                          ("zahlbetrag", "REAL"), ("leistungen", "TEXT"), ("vcc", "INTEGER")):
+                          ("zahlbetrag", "REAL"), ("leistungen", "TEXT"), ("vcc", "INTEGER"), ("eingecheckt", "INTEGER")):
             if name not in spalten:  # Migration von älteren Schemata
                 conn.execute(f"ALTER TABLE arrivals ADD COLUMN {name} {typ}")
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

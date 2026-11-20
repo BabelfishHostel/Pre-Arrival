@@ -9,6 +9,7 @@ Modi (Standard ist der sichere Trockenlauf):
     python run_send.py --live             echter Versand an die Gäste, Protokoll in mail_log
 
 Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 3),
+Gast ist nicht bereits eingecheckt (CSV CHECKIO = 1: keine Mail),
 Gast steht im letzten CSV-Import (wer dort fehlt, wurde storniert oder verschoben),
 und für die Vorlage gibt es noch keinen 'gesendet'/'uebersprungen'-Eintrag.
 Ist der letzte CSV-Import älter als MAX_IMPORT_ALTER_TAGE (Standard 0 = nur heute), sendet --live
@@ -245,6 +246,14 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             log.warning("%s: unklarer früherer Versand, nicht automatisch wiederholt", ref)
             continue
         if modus == "live" and z["m_status"] == "fehler" and z["m_versuche"] >= MAX_VERSUCHE:
+            continue
+        if z["eingecheckt"]:
+            if modus == "live":
+                _log_planen(conn, z["id"])
+                _log_setzen(conn, z["id"], "uebersprungen", fehler="bereits eingecheckt")
+            erg.uebersprungen += 1
+            erg.details.append(f"{ref}: bereits eingecheckt - keine Mail")
+            log.info("%s: bereits eingecheckt - keine Mail", ref)
             continue
         if not EMAIL_MUSTER.match(z["email"] or ""):
             if modus == "live":
