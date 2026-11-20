@@ -26,3 +26,6 @@ venv/
 *.log
 .vscode/
 .idea/
+
+# Ausnahmeliste enthält Adressen (nur die Beispieldatei gehört ins Repository)
+conf/versand_ausnahmen.txt

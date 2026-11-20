@@ -86,6 +86,14 @@ In ASSD können zu einer Buchung mehrere Pfade angelegt werden (gedacht für Zim
 
 Folge: Der Gast bekommt keine Pre-Arrival-Mail. Stattdessen geht eine Warn-Mail (Buchungsnummer, RegNummer, Zeiträume, keine Gästeadresse) an `SEND_ABSENDER`, im Testmodus an die Testadresse (Betreff mit „[TEST]“), im Trockenlauf wird eine Datei `WARNUNG_<RegNummer>.txt` in den Vorschauordner geschrieben. Das Mail-Log erhält `uebersprungen` mit „Mehrere Aufenthalte in einer Buchung, Warn-Mail gesendet“, die Warnung kommt also nur einmal. Schlägt das Senden der Warn-Mail fehl, bleibt der Gast offen (`fehler`, wird erneut versucht, Cronjob meldet Fehler). Wird die Buchung in ASSD korrigiert (Lücke weg), hebt der nächste Live-Lauf die Sperre automatisch auf und der Gast bekommt seine Mail. Ist alles richtig so, bitte dem Gast manuell schreiben.
 
+## Ausnahmeliste für den Versand
+
+Adressen, die keine Pre-Arrival-Mail bekommen sollen (zum Beispiel die Support-Adresse einer Buchungsplattform), stehen in `conf/versand_ausnahmen.txt` auf dem NAS. Die Datei wird nicht eingecheckt (enthält Adressen, steht in `.gitignore`); als Vorlage dient `conf/versand_ausnahmen.example.txt`, der Pfad lässt sich mit `VERSAND_AUSNAHMEN` ändern. Fehlt die Datei, gibt es keine Ausnahmen.
+
+Format: je Zeile eine E-Mail-Adresse oder, mit `@` davor, eine ganze Domain (`@example.org`). Groß-/Kleinschreibung ist egal, `#` beginnt einen Kommentar (auch hinter dem Eintrag), Leerzeilen sind erlaubt. Änderungen gelten ab dem nächsten Lauf, ein Neustart ist nicht nötig.
+
+Wirkung: Der Gast bekommt keine Mail, es entsteht bewusst kein Eintrag im Mail-Log, und die Zeile „Adresse steht auf der Ausnahmeliste“ erscheint im Lauf-Log. Wird der Eintrag wieder gestrichen, geht die Mail beim nächsten Lauf raus (solange die Anreise im Fenster liegt). Code: `lade_ausnahmen`, `ist_ausgenommen` in `src/run_send.py`.
+
 ## Stornierte und verschobene Buchungen
 
 Der Import löscht keine Gäste, die in einer neuen CSV fehlen; sie bleiben mit dem Stand ihres letzten Imports in der Datenbank (bis 30 Tage nach Abreise). Die CSV enthält aber täglich alle Anreisen von heute bis heute + 3 Tage. Deshalb versendet der Versand-Job nur an Gäste, die im **letzten CSV-Import** stehen. Wer dort fehlt, bekommt keine Mail; das Log nennt die Buchung (RegNummer, Anreise, „nicht mehr in der aktuellen CSV, storniert oder verschoben?“). Damit nicht eine alte Gästeliste als aktuell gilt, prüft der Job vorher, ob der letzte Import jung genug ist: `MAX_IMPORT_ALTER_TAGE` (Standard 0 = nur von heute). Ist er älter (z. B. ASSD-Mail ausgeblieben), sendet `--live` nichts und meldet Fehler (Exit 1, Healthcheck-Fehlerping); Trockenlauf und Test warnen nur. Wird dieselbe CSV nochmals eingelesen, wird der Zeitstempel des Imports aufgefrischt, und kehrt ein älterer Stand zurück, wird er neu eingelesen. Hat ein Gast die Mail schon bekommen und storniert danach, lässt sich das nicht zurückholen. *(Lücke am 17.11.2026 beim Prüfen der Vorschau gefunden und geschlossen.)*
@@ -156,6 +164,8 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
 - Bereits eingecheckte Gäste: neue CSV-Spalte `CHECKIO`, bei 1 keine Mail (20.11.2026)
+- Ausnahmeliste für den Versand (`conf/versand_ausnahmen.txt`, Adressen und Domains) (20.11.2026)
+- Gruppen: sind in ASSD intern markiert und kommen nicht in die CSV, daher keine eigene Behandlung nötig (20.11.2026)
 - VCC (virtuelle Kreditkarte): neue CSV-Spalte `VCC` (yes = bezahlt) -> Zahlungsbereich „bereits komplett bezahlt“, ohne Button (19.11.2026)
 - Mehrere Aufenthalte in einer Buchung: keine Gästemail, Warn-Mail an SEND_ABSENDER (19.11.2026)
 - Stornierte/verschobene Buchungen: Versand nur an Gäste aus dem letzten CSV-Import, Aktualitätsprüfung `MAX_IMPORT_ALTER_TAGE` (17.11.2026)

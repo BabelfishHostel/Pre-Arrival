@@ -9,6 +9,7 @@ Modi (Standard ist der sichere Trockenlauf):
     python run_send.py --live             echter Versand an die Gäste, Protokoll in mail_log
 
 Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 3),
+Adresse (oder Domain) steht nicht auf der Ausnahmeliste conf/versand_ausnahmen.txt,
 Gast ist nicht bereits eingecheckt (CSV CHECKIO = 1: keine Mail),
 Gast steht im letzten CSV-Import (wer dort fehlt, wurde storniert oder verschoben),
 und für die Vorlage gibt es noch keinen 'gesendet'/'uebersprungen'-Eintrag.
@@ -39,7 +40,7 @@ from db import init_db, jetzt, letzter_import, verbinde
 from events import EventQuelle
 from graph_mail import VersandFehler, baue_mime, hole_graph_token, sende_mime
 from render import MailDaten, render_mail, zahlung_variante
-from run_ingest import STANDARD_ENV, lade_env, pfad_aus_env
+from run_ingest import PROJEKT, STANDARD_ENV, lade_env, pfad_aus_env
 
 log = logging.getLogger("run_send")
 
@@ -57,6 +58,7 @@ class SendKonfig:
     storno_tage: int = 2                    # in den letzten N Tagen vor Anreise nicht mehr kostenfrei
     max_import_alter_tage: int = 0          # ältester erlaubter CSV-Import (0 = nur von heute)
     vorschau_dir: Optional[Path] = None
+    ausnahmen: frozenset = frozenset()      # Adressen/Domains ('@domain'), die keine Mail bekommen
 
 
 @dataclass
@@ -181,6 +183,33 @@ def warnung_aufheben(conn: sqlite3.Connection, heute: date, tage: int) -> None:
                              (z["id"], VORLAGE, MEHRFACH + "%"))
 
 
+AUSNAHMEN_STANDARD = "conf/versand_ausnahmen.txt"
+
+
+def lade_ausnahmen(pfad: Path) -> frozenset:
+    """Liest die Ausnahmeliste: je Zeile eine E-Mail-Adresse oder '@domain.tld' (ganze Domain).
+
+    Leerzeilen und '#'-Kommentare (auch hinter dem Eintrag) werden ignoriert, Groß-/Kleinschreibung egal.
+    Fehlt die Datei, gibt es keine Ausnahmen.
+    """
+    try:
+        text = pfad.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return frozenset()
+    eintraege = set()
+    for zeile in text.splitlines():
+        teile = zeile.split("#", 1)[0].split()
+        if teile:
+            eintraege.add(teile[0].strip().lower())
+    return frozenset(eintraege)
+
+
+def ist_ausgenommen(email: Optional[str], ausnahmen: frozenset) -> bool:
+    """True, wenn die Adresse oder ihre Domain auf der Ausnahmeliste steht."""
+    adresse = (email or "").strip().lower()
+    return bool(adresse) and (adresse in ausnahmen or "@" + adresse.rsplit("@", 1)[-1] in ausnahmen)
+
+
 def mail_daten(z: sqlite3.Row, k: SendKonfig, events: EventQuelle, heute: date) -> MailDaten:
     sprache = z["sprache"] if z["sprache"] in ("de", "en") else k.sprache_standard
     anreise = date.fromisoformat(z["anreise"])
@@ -254,6 +283,12 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             erg.uebersprungen += 1
             erg.details.append(f"{ref}: bereits eingecheckt - keine Mail")
             log.info("%s: bereits eingecheckt - keine Mail", ref)
+            continue
+        if ist_ausgenommen(z["email"], k.ausnahmen):
+            # bewusst ohne mail_log-Eintrag: Wird der Eintrag aus der Liste gestrichen, geht die Mail beim nächsten Lauf raus
+            erg.uebersprungen += 1
+            erg.details.append(f"{ref}: Adresse steht auf der Ausnahmeliste - keine Mail")
+            log.info("%s: Adresse steht auf der Ausnahmeliste - keine Mail", ref)
             continue
         if not EMAIL_MUSTER.match(z["email"] or ""):
             if modus == "live":
@@ -349,6 +384,7 @@ def lese_konfig() -> SendKonfig:
         max_import_alter_tage=int(e("MAX_IMPORT_ALTER_TAGE", "0")),
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
+    k.ausnahmen = lade_ausnahmen(pfad_aus_env(e("VERSAND_AUSNAHMEN", AUSNAHMEN_STANDARD)))
     if k.sprache_standard not in ("de", "en"):
         raise RuntimeError("SPRACHE_STANDARD muss de oder en sein.")
     return k

@@ -901,6 +901,40 @@ def test_eingecheckt():
         assert verarbeite(conn, k, q, HEUTE, "live", sender).gesendet == 0 and gesendet == []
 
 
+def test_ausnahmeliste():
+    """Adressen und Domains auf der Ausnahmeliste bekommen keine Mail (ohne Log-Eintrag, wirkt sofort wieder nach Streichen)."""
+    from run_send import ist_ausgenommen, lade_ausnahmen
+    with tempfile.TemporaryDirectory() as tmp:
+        liste = Path(tmp) / "aus.txt"
+        assert lade_ausnahmen(liste) == frozenset()                       # Datei fehlt: keine Ausnahmen
+        liste.write_bytes("\ufeff# Kommentar\r\n\r\nSupport@Example.com  # Trip.com\r\n@domain.example\r\n   \r\n#nur@kommentar.de\r\n".encode("utf-8"))
+        aus = lade_ausnahmen(liste)
+        assert aus == frozenset({"support@example.com", "@domain.example"}), aus
+        assert ist_ausgenommen("SUPPORT@example.com ", aus) and ist_ausgenommen("x@Domain.Example", aus)
+        assert not ist_ausgenommen("a@example.com", aus) and not ist_ausgenommen("", aus) and not ist_ausgenommen(None, aus)
+        conn = verbinde(Path(tmp) / "t.sqlite")
+        init_db(conn)
+        _gast(conn, "1", "Normal")
+        _gast(conn, "2", "Support", email_="support@example.com")
+        _gast(conn, "3", "Domain", email_="y@domain.example")
+        k = SendKonfig(vorschau_dir=Path(tmp) / "v", ausnahmen=aus)
+        q = ev.EventQuelle("")
+        e = verarbeite(conn, k, q, HEUTE, "dry")
+        assert (e.vorschau, e.uebersprungen) == (1, 2), e
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg)
+            return msg["Message-ID"]
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert [m["To"] for m in gesendet] == ["a@example.com"] and e.uebersprungen == 2, e
+        assert conn.execute("SELECT COUNT(*) FROM mail_log").fetchone()[0] == 1       # nur der gesendete Gast
+        # Eintrag gestrichen: die beiden bekommen ihre Mail beim nächsten Lauf
+        gesendet.clear()
+        k.ausnahmen = frozenset()
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert sorted(m["To"] for m in gesendet) == ["support@example.com", "y@domain.example"], [m["To"] for m in gesendet]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
