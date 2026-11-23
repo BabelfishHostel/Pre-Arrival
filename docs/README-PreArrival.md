@@ -94,6 +94,25 @@ Format: je Zeile eine E-Mail-Adresse oder, mit `@` davor, eine ganze Domain (`@e
 
 Wirkung: Der Gast bekommt keine Mail, es entsteht bewusst kein Eintrag im Mail-Log, und die Zeile „Adresse steht auf der Ausnahmeliste“ erscheint im Lauf-Log. Wird der Eintrag wieder gestrichen, geht die Mail beim nächsten Lauf raus (solange die Anreise im Fenster liegt). Code: `lade_ausnahmen`, `ist_ausgenommen` in `src/run_send.py`.
 
+## Azure-App für den Versand
+
+Der Versand läuft über Microsoft Graph (`POST /users/info@babelfish-hostel.de/sendMail`, Client-Credentials). Dafür gibt es eine **eigene Azure-App**, getrennt von der App, die das Postfach liest (`AZURE_*`, gemeinsam mit dem Yield-Projekt). Sie darf nur als `info@babelfish-hostel.de` senden, sonst nichts:
+
+1. **App registrieren** (Entra-Admin-Center, entra.microsoft.com → Anwendungen → App-Registrierungen → Neue Registrierung): Name z. B. „Babelfish Pre-Arrival Versand“, nur dieses Verzeichnis (Single Tenant), keine Umleitungs-URI. Notieren: Anwendungs-(Client-)ID und Verzeichnis-(Mandanten-)ID.
+2. **Client-Secret** unter „Zertifikate & Geheimnisse“ anlegen (Ablauf z. B. 12 oder 24 Monate, Ablaufdatum im Kalender notieren). Den Wert nur einmal kopieren und direkt in `conf/.env` auf dem NAS als `GRAPH_CLIENT_SECRET` eintragen, nirgends sonst.
+3. **Keine Graph-Berechtigung in Entra vergeben.** Eine Entra-Berechtigung `Mail.Send` (Anwendung) gälte für *alle* Postfächer; sie addiert sich zur Exchange-Rolle, die Beschränkung würde wirkungslos.
+4. **Exchange-RBAC für Anwendungen** (PowerShell, Rolle Exchange-Administrator oder Organization Management):
+   ```
+   Connect-ExchangeOnline
+   New-ServicePrincipal -AppId <Client-ID> -ObjectId <Objekt-ID der Unternehmensanwendung> -DisplayName "Pre-Arrival Versand"
+   New-ManagementScope -Name "Pre-Arrival Postfach" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'info@babelfish-hostel.de'"
+   New-ManagementRoleAssignment -App "Pre-Arrival Versand" -Role "Application Mail.Send" -CustomResourceScope "Pre-Arrival Postfach"
+   Test-ServicePrincipalAuthorization -Identity "Pre-Arrival Versand" -Resource info@babelfish-hostel.de
+   ```
+   Die Objekt-ID ist die der **Unternehmensanwendung** (Entra → Unternehmensanwendungen), nicht die aus den App-Registrierungen. Der Test muss `InScope = True` für `info@` melden; für ein anderes Postfach (z. B. ein Kollegen-Postfach) `False`. `-Exclusive` nicht verwenden. Änderungen greifen nach etwa 30 Minuten bis 2 Stunden, der Test umgeht diesen Cache.
+5. **`conf/.env` auf dem NAS:** `GRAPH_CLIENT_ID=`, `GRAPH_CLIENT_SECRET=` (Tenant-ID kommt aus `AZURE_TENANT_ID`, oder `GRAPH_TENANT_ID`). Diese Werte haben Vorrang vor `AZURE_*` (Code: `graph_zugang` in `src/run_send.py`); fehlt eines von beiden, bricht der Versand mit Konfigurationsfehler ab, es wird nie gemischt.
+6. **Prüfen:** `python3 src/run_send.py --test-an <eigene Adresse>`. Kommt ein 403 („ErrorAccessDenied“), ist die RBAC-Zuweisung noch nicht aktiv (Wartezeit) oder falsch; **nicht** durch eine Entra-Berechtigung beheben.
+
 ## Stornierte und verschobene Buchungen
 
 Der Import löscht keine Gäste, die in einer neuen CSV fehlen; sie bleiben mit dem Stand ihres letzten Imports in der Datenbank (bis 30 Tage nach Abreise). Die CSV enthält aber täglich alle Anreisen von heute bis heute + 3 Tage. Deshalb versendet der Versand-Job nur an Gäste, die im **letzten CSV-Import** stehen. Wer dort fehlt, bekommt keine Mail; das Log nennt die Buchung (RegNummer, Anreise, „nicht mehr in der aktuellen CSV, storniert oder verschoben?“). Damit nicht eine alte Gästeliste als aktuell gilt, prüft der Job vorher, ob der letzte Import jung genug ist: `MAX_IMPORT_ALTER_TAGE` (Standard 0 = nur von heute). Ist er älter (z. B. ASSD-Mail ausgeblieben), sendet `--live` nichts und meldet Fehler (Exit 1, Healthcheck-Fehlerping); Trockenlauf und Test warnen nur. Wird dieselbe CSV nochmals eingelesen, wird der Zeitstempel des Imports aufgefrischt, und kehrt ein älterer Stand zurück, wird er neu eingelesen. Hat ein Gast die Mail schon bekommen und storniert danach, lässt sich das nicht zurückholen. *(Lücke am 17.11.2026 beim Prüfen der Vorschau gefunden und geschlossen.)*
@@ -164,6 +183,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
 - Bereits eingecheckte Gäste: neue CSV-Spalte `CHECKIO`, bei 1 keine Mail (20.11.2026)
+- SPF/DKIM/DMARC geprüft (23.11.2026): SPF enthält Microsoft über secureserver.net (9 von 10 DNS-Abfragen, nichts mehr hinzufügen), DKIM im Defender-Portal aktiviert und gültig, DMARC `p=none` (Berichte an Brevo). Testmail von info@ an Gmail: SPF, DKIM und DMARC PASS
 - Ausnahmeliste für den Versand (`conf/versand_ausnahmen.txt`, Adressen und Domains) (20.11.2026)
 - Gruppen: sind in ASSD intern markiert und kommen nicht in die CSV, daher keine eigene Behandlung nötig (20.11.2026)
 - VCC (virtuelle Kreditkarte): neue CSV-Spalte `VCC` (yes = bezahlt) -> Zahlungsbereich „bereits komplett bezahlt“, ohne Button (19.11.2026)
@@ -177,6 +197,9 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 
 ## Offen
 
-1. **SPF, DKIM, DMARC** für `babelfish-hostel.de` prüfen, bevor Mails über den eigenen Server laufen.
-2. **Livegang:** Beim ersten Lauf mit `SEND_MODUS=live` wären alle Gäste fällig, die im letzten CSV-Import stehen und in den nächsten 3 Tagen (einschließlich heute) anreisen. Vorher festlegen, wie der Start aussieht.
-3. **Azure:** eigene App nur mit `Mail.Send`, per RBAC auf `info@babelfish-hostel.de` beschränkt (bewusst hinten angestellt).
+1. **Livegang** (Beschluss 23.11.2026: erst Testlauf, dann Start ab morgen anreisenden Gästen). Ablauf:
+   * **Vorher:** Azure-App mit `Mail.Send` (Punkt 2), Ausnahmeliste auf dem NAS anlegen (Trip.com-Support-Adresse), Healthcheck optional.
+   * **Testlauf:** `python3 src/run_send.py --test-an <eigene Adresse>`: alle fälligen Mails (und Warn-Mails) gehen an die eigene Adresse, nichts an Gäste, kein Eintrag im Mail-Log. Dort prüfen: Darstellung, Texte, Zahlungsbereich, Leistungen, Warnungen.
+   * **Start:** In der `.env` `SEND_MODUS=live` und `SEND_ANREISE_AB=<Tag nach dem Starttag>` setzen. Dann bekommen nur Gäste mit Anreise ab diesem Tag eine Mail; wer am Starttag anreist, wird ausgelassen (im Lauf-Log vermerkt). Die Zeile muss später nicht entfernt werden, ein vergangenes Datum wirkt nicht mehr.
+   * Danach läuft der Normalbetrieb: jeder Gast bekommt seine Mail 3 Tage vor Anreise.
+2. **Azure:** Eigene Versand-App einrichten, Schritte siehe Abschnitt „Azure-App für den Versand“ (Ausführung offen: App registrieren, Secret, Exchange-RBAC, `GRAPH_*` in die `.env`, Testlauf).

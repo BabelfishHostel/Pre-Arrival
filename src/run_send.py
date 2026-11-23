@@ -9,6 +9,7 @@ Modi (Standard ist der sichere Trockenlauf):
     python run_send.py --live             echter Versand an die Gäste, Protokoll in mail_log
 
 Wer ist fällig: Anreise zwischen heute und heute + SEND_TAGE_VORHER (Standard 3),
+Anreise nicht vor SEND_ANREISE_AB (Startregel für den Livegang, optional),
 Adresse (oder Domain) steht nicht auf der Ausnahmeliste conf/versand_ausnahmen.txt,
 Gast ist nicht bereits eingecheckt (CSV CHECKIO = 1: keine Mail),
 Gast steht im letzten CSV-Import (wer dort fehlt, wurde storniert oder verschoben),
@@ -58,6 +59,7 @@ class SendKonfig:
     storno_tage: int = 2                    # in den letzten N Tagen vor Anreise nicht mehr kostenfrei
     max_import_alter_tage: int = 0          # ältester erlaubter CSV-Import (0 = nur von heute)
     vorschau_dir: Optional[Path] = None
+    anreise_ab: Optional[date] = None       # Startregel: Gäste mit früherer Anreise bekommen keine Mail
     ausnahmen: frozenset = frozenset()      # Adressen/Domains ('@domain'), die keine Mail bekommen
 
 
@@ -72,13 +74,15 @@ class SendErgebnis:
 
 
 def faellige_gaeste(conn: sqlite3.Connection, heute: date, tage: int, nur_ungesendet: bool = True,
-                    nur_letzter_import: bool = True):
+                    nur_letzter_import: bool = True, anreise_ab: Optional[date] = None):
     """Gäste mit Anreise in [heute, heute+tage] ohne abgeschlossenen Versand.
 
     Nur Gäste aus dem letzten CSV-Import: Die CSV enthält täglich alle Anreisen im Fenster. Wer dort fehlt
     (storniert oder verschoben), steht nur noch mit altem Stand in der Datenbank und bekommt keine Mail.
     """
     zeilen = _gaeste_im_fenster(conn, heute, tage)
+    if anreise_ab:
+        zeilen = [z for z in zeilen if z["anreise"] >= anreise_ab.isoformat()]
     if nur_letzter_import:
         letzter = letzter_import(conn)
         zeilen = [z for z in zeilen if letzter and z["import_id"] == letzter["id"]]
@@ -267,7 +271,14 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
         log.info("%s", text)
     if modus == "live":
         warnung_aufheben(conn, heute, k.tage_vorher)
-    for z in faellige_gaeste(conn, heute, k.tage_vorher):
+    if k.anreise_ab:
+        frueher = [z for z in faellige_gaeste(conn, heute, k.tage_vorher) if z["anreise"] < k.anreise_ab.isoformat()]
+        if frueher:
+            text = (f"{len(frueher)} Gast/Gäste mit Anreise vor {k.anreise_ab.isoformat()} bekommen keine Mail "
+                    "(Startregel SEND_ANREISE_AB)")
+            erg.details.append(text)
+            log.info("%s", text)
+    for z in faellige_gaeste(conn, heute, k.tage_vorher, anreise_ab=k.anreise_ab):
         ref = f"Gast {z['reg_nummer']} (Anreise {z['anreise']})"
         if modus == "live" and z["m_status"] == "geplant" and z["m_versuche"] > 0:
             erg.uebersprungen += 1
@@ -374,6 +385,25 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
     return erg
 
 
+def graph_zugang() -> tuple:
+    """Zugangsdaten der Azure-App für den Versand: (Tenant, Client-ID, Secret).
+
+    GRAPH_TENANT_ID / GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET (eigene App nur mit Mail.Send, per Exchange-RBAC auf
+    ein Postfach beschränkt) haben Vorrang; sind sie nicht gesetzt, gelten AZURE_* (App, die auch das Postfach liest).
+    Fehlt eines der drei Felder, wird kein Mix aus beiden Apps gebildet: RuntimeError.
+    """
+    e = lambda n: os.environ.get(n, "").strip()  # noqa: E731
+    if e("GRAPH_CLIENT_ID") or e("GRAPH_CLIENT_SECRET"):
+        werte = (e("GRAPH_TENANT_ID") or e("AZURE_TENANT_ID"), e("GRAPH_CLIENT_ID"), e("GRAPH_CLIENT_SECRET"))
+        if not all(werte):
+            raise RuntimeError("GRAPH_CLIENT_ID und GRAPH_CLIENT_SECRET müssen beide gesetzt sein (Tenant: GRAPH_TENANT_ID oder AZURE_TENANT_ID).")
+        return werte
+    werte = (e("AZURE_TENANT_ID"), e("AZURE_CLIENT_ID"), e("AZURE_CLIENT_SECRET"))
+    if not all(werte):
+        raise RuntimeError("Zugangsdaten für den Versand fehlen (GRAPH_CLIENT_ID/GRAPH_CLIENT_SECRET oder AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET).")
+    return werte
+
+
 def lese_konfig() -> SendKonfig:
     e = os.environ.get
     k = SendKonfig(
@@ -384,6 +414,12 @@ def lese_konfig() -> SendKonfig:
         max_import_alter_tage=int(e("MAX_IMPORT_ALTER_TAGE", "0")),
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
+    ab = e("SEND_ANREISE_AB", "").strip()
+    if ab:
+        try:
+            k.anreise_ab = date.fromisoformat(ab)
+        except ValueError:
+            raise RuntimeError("SEND_ANREISE_AB muss ein Datum JJJJ-MM-TT sein.")
     k.ausnahmen = lade_ausnahmen(pfad_aus_env(e("VERSAND_AUSNAHMEN", AUSNAHMEN_STANDARD)))
     if k.sprache_standard not in ("de", "en"):
         raise RuntimeError("SPRACHE_STANDARD muss de oder en sein.")
@@ -408,10 +444,7 @@ def main(argv: Optional[List[str]] = None, env_pfad: Optional[Path] = None) -> i
         db_pfad = pfad_aus_env(os.environ["DB_PATH"])
         sender = None
         if modus != "dry":
-            tenant, cid, sec = (os.environ.get(n, "").strip() for n in
-                                ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"))
-            if not (tenant and cid and sec):
-                raise RuntimeError("AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET fehlen.")
+            tenant, cid, sec = graph_zugang()
             token = hole_graph_token(tenant, cid, sec)
             sender = lambda msg: sende_mime(msg, k.postfach, token())  # noqa: E731
     except (RuntimeError, KeyError) as exc:

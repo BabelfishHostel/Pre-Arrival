@@ -935,6 +935,82 @@ def test_ausnahmeliste():
         assert sorted(m["To"] for m in gesendet) == ["support@example.com", "y@domain.example"], [m["To"] for m in gesendet]
 
 
+def test_startregel():
+    """SEND_ANREISE_AB: Gäste mit früherer Anreise bekommen keine Mail, die übrigen schon; ungültiges Datum = Konfigfehler."""
+    import os
+    from run_send import lese_konfig
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "t.sqlite")
+        init_db(conn)
+        _gast(conn, "1", "Heute", anreise="2026-10-07", email_="h@example.com")
+        _gast(conn, "2", "Morgen", anreise="2026-10-08", email_="m@example.com")
+        _gast(conn, "3", "Spaeter", anreise="2026-10-10", email_="s@example.com")
+        q = ev.EventQuelle("")
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg)
+            return msg["Message-ID"]
+        k = SendKonfig(anreise_ab=date(2026, 10, 8))
+        assert [z["reg_nummer"] for z in faellige_gaeste(conn, HEUTE, 3, anreise_ab=k.anreise_ab)] == ["2", "3"]
+        e = verarbeite(conn, k, q, HEUTE, "live", sender)
+        assert sorted(m["To"] for m in gesendet) == ["m@example.com", "s@example.com"] and e.gesendet == 2, e
+        assert any("vor 2026-10-08" in d for d in e.details), e.details
+        # ohne Startregel (oder vergangenes Datum) ist der Gast von heute wieder fällig
+        gesendet.clear()
+        e = verarbeite(conn, SendKonfig(anreise_ab=date(2026, 1, 1)), q, HEUTE, "live", sender)
+        assert [m["To"] for m in gesendet] == ["h@example.com"], [m["To"] for m in gesendet]
+    alt = {n: os.environ.get(n) for n in ("SEND_ANREISE_AB", "DB_PATH")}
+    try:
+        os.environ["SEND_ANREISE_AB"] = "2026-12-01"
+        assert lese_konfig().anreise_ab == date(2026, 12, 1)
+        os.environ["SEND_ANREISE_AB"] = ""
+        assert lese_konfig().anreise_ab is None
+        os.environ["SEND_ANREISE_AB"] = "morgen"
+        try:
+            lese_konfig()
+            raise AssertionError("RuntimeError erwartet")
+        except RuntimeError as exc:
+            assert "JJJJ-MM-TT" in str(exc)
+    finally:
+        for n, v in alt.items():
+            os.environ.pop(n, None) if v is None else os.environ.__setitem__(n, v)
+
+
+def test_graph_zugang():
+    """Eigene Versand-App (GRAPH_*) hat Vorrang vor AZURE_*, kein Mix aus beiden Apps."""
+    import os
+    from run_send import graph_zugang
+    namen = ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET")
+    alt = {n: os.environ.get(n) for n in namen}
+    def setze(**kw):
+        for n in namen:
+            os.environ.pop(n, None)
+        os.environ.update(kw)
+    try:
+        setze(AZURE_TENANT_ID="t", AZURE_CLIENT_ID="a", AZURE_CLIENT_SECRET="as")
+        assert graph_zugang() == ("t", "a", "as")                                            # nur AZURE_*: wie bisher
+        setze(AZURE_TENANT_ID="t", AZURE_CLIENT_ID="a", AZURE_CLIENT_SECRET="as", GRAPH_CLIENT_ID="g", GRAPH_CLIENT_SECRET="gs")
+        assert graph_zugang() == ("t", "g", "gs")                                            # GRAPH_* gewinnt, Tenant von AZURE
+        setze(GRAPH_TENANT_ID="t2", GRAPH_CLIENT_ID="g", GRAPH_CLIENT_SECRET="gs")
+        assert graph_zugang() == ("t2", "g", "gs")
+        setze(AZURE_TENANT_ID="t", AZURE_CLIENT_ID="a", AZURE_CLIENT_SECRET="as", GRAPH_CLIENT_ID="g")
+        for fall in ("GRAPH_CLIENT_ID",):                                                    # Secret fehlt: Fehler statt Mix
+            try:
+                graph_zugang()
+                raise AssertionError("RuntimeError erwartet")
+            except RuntimeError as exc:
+                assert "GRAPH_CLIENT_SECRET" in str(exc)
+        setze()
+        try:
+            graph_zugang()
+            raise AssertionError("RuntimeError erwartet")
+        except RuntimeError as exc:
+            assert "fehlen" in str(exc)
+    finally:
+        for n, v in alt.items():
+            os.environ.pop(n, None) if v is None else os.environ.__setitem__(n, v)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

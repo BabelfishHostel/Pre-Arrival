@@ -1,0 +1,9 @@
+# Ausnahmeliste: Diese Adressen bekommen KEINE Pre-Arrival-Mail.
+# Kopieren nach conf/versand_ausnahmen.txt (wird nicht eingecheckt, enthält Adressen) und auf dem NAS pflegen.
+#
+# Je Zeile eine E-Mail-Adresse oder, mit @ davor, eine ganze Domain. Groß-/Kleinschreibung egal.
+# Mit # beginnt ein Kommentar (auch hinter dem Eintrag). Änderungen gelten ab dem nächsten Lauf,
+# ein Neustart ist nicht nötig. Streicht man einen Eintrag wieder, geht die Mail ab dem nächsten Lauf raus.
+
+support@example.com        # Beispiel: Support-Adresse einer Buchungsplattform
+@example.org               # Beispiel: alle Adressen dieser Domain
