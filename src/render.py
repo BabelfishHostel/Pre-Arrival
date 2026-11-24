@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from leistungen import leistungen_html, parse_leistungen
+from leistungen import leistungen_html, mehrere_pfade, parse_leistungen, parse_pfade, pfade_html
 
 VORLAGEN_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -104,7 +104,8 @@ class MailDaten:
     vcc: bool = False                       # CSV VCC = yes: mit virtueller Kreditkarte schon bezahlt
     leistungen: Optional[str] = None        # CSV room (roh); leer/unlesbar = kein Leistungsbereich
     kanal: Optional[str] = None             # CSV Kanal (EGB = eigene Website)
-    rate: Optional[str] = None              # 'flex' / 'fix' / None (CSV Rate)
+    rate: Optional[str] = None              # 'flex' / 'nrf' / 'fix' / 'kuenstler' / None (CSV Rate)
+    pfade: Optional[str] = None             # CSV Pfade (roh); mehr als ein Pfad = Pfadliste statt Anreise/Abreise/Dauer/Gäste
     storno_tage: int = 2                    # in den letzten N Tagen vor Anreise nicht mehr kostenfrei
 
 
@@ -194,10 +195,13 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     if variante:
         text = _block_behalten(text, "zahlung")
         text = _block_behalten(text, "zahlung_button") if d.paymentlink and variante != "bezahlt" else _block_entfernen(text, "zahlung_button")
-        for name in ("anzahlung", "rest", "gesamt", "bezahlt"):
+        kuenstler = variante == "anzahlung" and d.rate == "kuenstler"
+        for name in ("anzahlung", "anzahlung_kuenstler", "rest", "gesamt", "bezahlt"):
             blk = f"zahlung_{name}"
-            text = _block_behalten(text, blk) if name == variante else _block_entfernen(text, blk)
-        text = _block_behalten(text, "zahlung_agb") if variante == "anzahlung" else _block_entfernen(text, "zahlung_agb")
+            aktiv = (name == "anzahlung_kuenstler") if kuenstler else (name == variante)
+            text = _block_behalten(text, blk) if aktiv else _block_entfernen(text, blk)
+        # AGB-Satz nur bei normaler Anzahlung, nicht bei Künstlern
+        text = _block_behalten(text, "zahlung_agb") if variante == "anzahlung" and not kuenstler else _block_entfernen(text, "zahlung_agb")
     else:
         text = _block_entfernen(text, "zahlung")
     storno = storno_variante(d)
@@ -207,6 +211,10 @@ def render_html(vorlage: str, d: MailDaten) -> str:
 
     positionen = parse_leistungen(d.leistungen)
     text = _block_behalten(text, "leistungen") if positionen else _block_entfernen(text, "leistungen")
+
+    mehrpfad = mehrere_pfade(d.pfade)
+    text = _block_entfernen(text, "einzelpfad") if mehrpfad else _block_behalten(text, "einzelpfad")
+    text = _block_behalten(text, "mehrpfad") if mehrpfad else _block_entfernen(text, "mehrpfad")
 
     ota = ota_buchung(d)
     text = _block_entfernen(text, "nichtanreise_direkt") if ota else _block_behalten(text, "nichtanreise_direkt")
@@ -224,6 +232,8 @@ def render_html(vorlage: str, d: MailDaten) -> str:
     }
     if positionen:
         werte["leistungen_html"] = leistungen_html(positionen, d.zahlbetrag, s, d.rate)
+    if mehrpfad:
+        werte["pfade_html"] = pfade_html(parse_pfade(d.pfade), s)
     if variante and variante != "bezahlt" and d.paymentlink:
         werte["paymentlink"] = html.escape(d.paymentlink, quote=True)
     for key, wert in werte.items():

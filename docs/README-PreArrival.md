@@ -32,7 +32,8 @@ Die CSV „Anreise in 3 Tagen“ kommt täglich um 06:00 Uhr per Mail. Sie enth�
 | `Vorausdatum_1` | Datum, bis zu dem die Vorauszahlung fällig ist; immer gesetzt, wenn eine Vorauszahlung nötig ist; `0000-00-00` = nicht gesetzt |
 | `Schon_eingegangen` | bisher bezahlter Betrag |
 | `VCC` | `yes` = Buchung ist mit virtueller Kreditkarte bereits bezahlt (alles andere, auch fehlende Spalte: nein); wird als 0/1 gespeichert (Schema v6, Migration automatisch) |
-| `CHECKIO` | `1` = Gast ist bereits eingecheckt: keine Mail (Log `uebersprungen`, „bereits eingecheckt“); leer/0 = nicht eingecheckt; wird als 0/1 gespeichert (Schema v7). Die Spalte `CHECKIN` (enthält `O`) wird nicht ausgewertet |
+| `CHECKIO` | `1` = Gast ist bereits eingecheckt: keine Mail (Log `uebersprungen`, „bereits eingecheckt“); leer/0 = nicht eingecheckt; wird als 0/1 gespeichert (Schema v7). Die Spalte `CHECKIN` (enthält `O`) wird nicht ausgewertet. **Fehlt die Spalte `CHECKIO` ganz** (so in der CSV vom 24.11.2026), bleibt der gespeicherte Stand unverändert und der Import meldet einen Hinweis: eingecheckte Gäste werden dann nicht erkannt |
+| `Pfade` | Zimmerblöcke der Buchung: `Anreise Abreise Kategorie1 Kategorie2 …`, mehrere Pfade getrennt mit `\|` (z. B. `2026-11-26 2026-11-30 6-Bettzimmer_mixed 4-Bettzimmer_private`). Wird roh gespeichert (Schema v8). Bei **mehr als einem Pfad** zeigt die Mail unter der Buchungsnummer die Pfade statt Anreise, Abreise, Dauer und Gäste (Blöcke `einzelpfad`/`mehrpfad`) |
 | `Zahlbetrag`, `Restbetrag` | Gesamtbetrag und offener Rest (`Zahlbetrag` − `Schon_eingegangen`); werden gespeichert, nicht angezeigt |
 | `room` | Leistungsliste, Einträge getrennt mit `\|`: `Datum Anzahl x Artikelname Einzelpreis Rabatt rabattierter-Gesamtpreis`, z. B. `2026-11-18 3 x 10-Bettzimmer mixed 21.89 10.00 59.10`. Rabatt in Prozent, Gesamtpreis gilt für alle Einheiten. Artikel sind Zimmer, Frühstück und Abzüge (negative Menge, z. B. `Internet Deposit` = vom Portal schon kassiert). Die Summe aller Gesamtpreise ergibt `Zahlbetrag` (an 36 Testzeilen geprüft). Wird roh gespeichert, in der Mail als Tabelle angezeigt |
 | `Paylink` | persönlicher Zahlungslink; **leer = kein Zahlungsbereich** |
@@ -70,6 +71,7 @@ Jeder austauschbare Teil steht zwischen `<!-- BLOCK:name:START -->` und `<!-- BL
 | Block | Wann | Text (DE) |
 |---|---|---|
 | `zahlung_rest` | `Schon_eingegangen` > 0 (auch ohne `Vorausdatum_1`, ohne Vergleich mit `Vorauszahlung_1`) | „Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.“ |
+| `zahlung_anzahlung_kuenstler` | wie `zahlung_anzahlung`, aber Rate `Künstle` (ASSD kürzt den Wert; Prüfung auf Anfang „Künstl“) | „Zahle gerne über den Paymentlink, falls für Dich einfacher.“ (Button bleibt, **kein AGB-Satz**; EN: „Feel free to pay via the payment link if that’s easier for you.“, EN-Text ist mein Vorschlag) |
 | `zahlung_anzahlung` | sonst, `Vorausdatum_1` gesetzt **oder** (Sonderfall, 12.11.2026) Kanal `EGB` und Rate `FLEX` (Buchung über die Website, Anzahlung fällig, auch ohne Vorausdatum) | „Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.“ (mit AGB-Satz unter dem Button, Block `zahlung_agb`) |
 | `zahlung_bezahlt` | **`VCC` = yes (hat Vorrang, auch wenn ein Paylink und ein offener Restbetrag in der CSV stehen; Button und Paylink entfallen)**, oder: kein Paylink, aber komplett bezahlt: `Zahlbetrag` > 0, `Schon_eingegangen` > 0 und `Restbetrag` leer/0; egal welcher Kanal | „Deine Buchung ist bereits komplett bezahlt.“ (ohne Button, ohne Hinweis zu Zahlungsarten, ohne AGB-Satz) |
 | `zahlung_gesamt` | sonst (kein Vorausdatum) | „Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du die Buchung im Voraus bezahlen.“ |
@@ -78,7 +80,7 @@ Kanal und Rate zählen nur für den Sonderfall Website-Flex (`EGB` + `FLEX` → 
 
 **Nichtanreise-Satz** (letzter Satz im Bereich „Stimmt alles?“): Direktbuchung (Kanal `EGB` oder leer) bekommt „Falls Du nicht kommen kannst, sag uns bitte kurz Bescheid – dann wissen wir Bescheid und halten Dir das Bett nicht unnötig frei.“ OTA-Buchung (jeder andere Kanal, z. B. `BHC`, `EHC`) bekommt „Falls Du stornieren musst, mach das über die Seite, auf der Du gebucht hast – wir bekommen automatisch Bescheid und Du musst uns nicht extra schreiben.“ (EN: „If you need to cancel, do it through the website you booked on – we’ll be notified automatically, so there’s no need to contact us.“) (Blöcke `nichtanreise_direkt` und `nichtanreise_ota`; EN ist meine Übersetzung, noch nicht geprüft.)
 
-**Leistungen** (Spalte `room`): Im Kasten „Deine Buchung“ erscheint unter Anreise/Dauer eine Tabelle „Leistungen“ (EN „Services“) mit einer Zeile je Nacht und Artikel: Datum, Anzahl × Bezeichnung, Betrag. Bei Rabatt oder Anzahl größer 1 steht darunter klein der Einzelpreis und der Rabatt (z. B. „3 × 21,89 EUR, Rabatt 10 %“). Die Bezeichnungen kommen aus ASSD in der Gastsprache und werden so angezeigt: `10-Bettzimmer mixed` → „Bett im 10-Bettzimmer gender-mixed“ (ebenso 6 und 4), `4-Bettzimmer female` → „Bett im 4-Bettzimmer für Frauen“, `Appartement` → „Apartment für 4“; `Einzelzimmer`, `Doppelzimmer`, `Doppelzimmer Studio`, `4-Bettzimmer privat`, `6-Bettzimmer privat` (und Frühstück, Schlafcouch) bleiben unverändert. Englisch: „Bed in 10-bed gender-mixed room“, „Bed in 4-bed female only room“ (auch aus „4 bed room female only“), „Apartment for 4“, sonst wie von ASSD geliefert (EN-Namen sind mein Vorschlag, nicht geprüft). Hinter Mehrbettzimmern steht je nach Rate der Zusatz „, nicht erstattbar“ (Rate `NRF`) bzw. „, erstattbar“ (Rate `FLEX`), englisch „non-refundable“/„refundable“; bei anderen Raten und bei Nicht-Zimmer-Artikeln kein Zusatz (Beispiele: „1 × Doppelzimmer, erstattbar“, „2 × Bett im 10-Bettzimmer gender-mixed, nicht erstattbar“). Unbekannte Namen: im Deutschen `mixed` → „gemischt“, `female` → „weiblich“, sonst unverändert. `Internet Deposit` heißt „Bereits über das Portal bezahlt“ / „Already paid via the platform“ (Betrag mit Minus). Zuletzt steht „Gesamtbetrag“ / „Total“ (`Zahlbetrag`, sonst die Summe der Zeilen). Ist `room` leer oder auch nur ein Eintrag nicht lesbar, entfällt der ganze Bereich (kein unvollständiger Betrag), das Log enthält einen Hinweis, die Mail geht trotzdem raus. Code: `src/leistungen.py`, DB-Feld `leistungen` (Schema v5).
+**Leistungen** (Spalte `room`): Im Kasten „Deine Buchung“ erscheint unter Anreise/Dauer eine Tabelle „Leistungen“ (EN „Services“) mit einer Zeile je Nacht und Artikel: Datum, Anzahl × Bezeichnung, Betrag. Bei Rabatt oder Anzahl größer 1 steht darunter klein der Einzelpreis und der Rabatt (z. B. „6 × 7,90 EUR = 47,40 EUR, Rabatt 10 %“, also mit dem unrabattierten Betrag; der Preis rechts ist rabattiert). Die Bezeichnungen kommen aus ASSD in der Gastsprache und werden so angezeigt: `10-Bettzimmer mixed` → „Bett im 10-Bettzimmer gender-mixed“ (ebenso 6 und 4), `4-Bettzimmer female` → „Bett im 4-Bettzimmer für Frauen“, `Appartement` → „Apartment für 4“; `Einzelzimmer`, `Doppelzimmer`, `Doppelzimmer Studio`, `4-Bettzimmer privat`, `6-Bettzimmer privat` (und Frühstück, Schlafcouch) bleiben unverändert. Englisch: „Bed in 10-bed gender-mixed room“, „Bed in 4-bed female only room“ (auch aus „4 bed room female only“), „Apartment for 4“, sonst wie von ASSD geliefert (EN-Namen sind mein Vorschlag, nicht geprüft). Hinter Mehrbettzimmern steht je nach Rate der Zusatz „, nicht erstattbar“ (Rate `NRF`) bzw. „, erstattbar“ (Rate `FLEX`), englisch „non-refundable“/„refundable“; bei anderen Raten und bei Nicht-Zimmer-Artikeln kein Zusatz (Beispiele: „1 × Doppelzimmer, erstattbar“, „2 × Bett im 10-Bettzimmer gender-mixed, nicht erstattbar“). Unbekannte Namen: im Deutschen `mixed` → „gemischt“, `female` → „weiblich“, sonst unverändert. `Internet Deposit` heißt „Bereits über das Portal bezahlt“ / „Already paid via the platform“ (Betrag mit Minus). Zuletzt steht „Gesamtbetrag“ / „Total“ (`Zahlbetrag`, sonst die Summe der Zeilen) und, falls Rabatte vorkommen, darunter klein „darin enthaltener Rabatt“ / „discount included“ als Eurobetrag (Summe aus Anzahl × Einzelpreis minus rabattiertem Preis, ohne Minuszeichen). Namen aus der Spalte `Pfade` (Pfadliste): `4-Bettzimmer_private` → „4-Bettzimmer (privat)“ / „4-bed private room“, `Einzelzimmer` → „Single room“, `Doppelzimmer` → „Double room“, `Doppelzimmer_studio` → „Double room Studio“, `Apartement` (Tippfehler in ASSD) → „Apartment für 4“; gleiche Einträge werden als „3 × …“ zusammengefasst. Ist `room` leer oder auch nur ein Eintrag nicht lesbar, entfällt der ganze Bereich (kein unvollständiger Betrag), das Log enthält einen Hinweis, die Mail geht trotzdem raus. Code: `src/leistungen.py`, DB-Feld `leistungen` (Schema v5).
 
 ## Mehrere Aufenthalte in einer Buchung
 
@@ -182,7 +184,9 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Neues CSV-Format und Zahlungstexte inkl. Sonderfall Website-Flex (`EGB` + `FLEX` → Anzahlungstext) in den Vorschauen geprüft und in Ordnung (12.11.2026)
 - Komplett bezahlte Buchungen (kein Paylink, `Zahlbetrag` > 0, `Schon_eingegangen` > 0, `Restbetrag` 0) bekommen den Zahlungsbereich mit „Deine Buchung ist bereits komplett bezahlt.“, ohne Button, für alle Kanäle; Nichtanreise-Satz unterscheidet Direkt- (Kanal `EGB`/leer) und OTA-Buchung (13.11.2026)
 - Leistungsliste aus der CSV-Spalte `room` (Zimmer, Frühstück, Rabatt, Portal-Abzug) als Tabelle im Kasten „Deine Buchung“ inkl. Gesamtbetrag (16.11.2026). Damit erscheinen erstmals Beträge in der Mail (bewusst so entschieden)
+- Letzte Durchsicht (24.11.2026): Rabattzeile mit unrabattiertem Betrag, Gesamtrabatt unter dem Gesamtbetrag, neue CSV-Spalte `Pfade` (bei mehr als einem Pfad Pfadliste statt Anreise/Abreise/Dauer/Gäste), Rate Künstler mit eigenem Zahlungstext ohne AGB-Satz, neuer Text zur Anreise außerhalb der Rezeptionszeiten (DE/EN, inkl. Winterzeiten und Self-Check-in)
 - Bereits eingecheckte Gäste: neue CSV-Spalte `CHECKIO`, bei 1 keine Mail (20.11.2026)
+- Azure-App für den Versand: eigene App mit Exchange-RBAC auf `info@babelfish-hostel.de`, `GRAPH_*` in der `.env`, Testversand an die eigene Adresse funktioniert (23.11.2026)
 - SPF/DKIM/DMARC geprüft (23.11.2026): SPF enthält Microsoft über secureserver.net (9 von 10 DNS-Abfragen, nichts mehr hinzufügen), DKIM im Defender-Portal aktiviert und gültig, DMARC `p=none` (Berichte an Brevo). Testmail von info@ an Gmail: SPF, DKIM und DMARC PASS
 - Ausnahmeliste für den Versand (`conf/versand_ausnahmen.txt`, Adressen und Domains) (20.11.2026)
 - Gruppen: sind in ASSD intern markiert und kommen nicht in die CSV, daher keine eigene Behandlung nötig (20.11.2026)
@@ -195,11 +199,41 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
 - Kanal leer: bedeutet Buchung vor Ort oder am Telefon (zusammen mit leerer Buchungsnummer), Mail geht trotzdem raus, Buchungsnummer-Fallback auf die `RegNummer` bleibt (06.11.2026)
 - Events: Sheet angebunden (Spaltenköpfe des echten Sheets geprüft), `EVENTS_SHEET_ID` und `EVENTSEITE_URL` gesetzt, Theater gleichberechtigt, höchstens 4 Einträge, Abschlusslink „Mehr Tipps findest Du im Eventbereich unserer Website.“ (Vorschau auf dem NAS geprüft, 05.11.2026)
 
+## Checkliste Livegang
+
+**Einen Tag vorher**
+1. Testmails (`python3 src/run_send.py --test-an <eigene Adresse>`) durchsehen: Datum/Personenzahl, Zahlungsbereich, Leistungsliste, Stornosatz, Warn-Mail, Umlaute.
+2. `conf/versand_ausnahmen.txt` auf dem NAS anlegen (Vorlage `conf/versand_ausnahmen.example.txt`), Trip.com-Support-Adresse eintragen.
+3. `SEND_ABSENDER` und `GRAPH_POSTFACH` stehen auf `info@babelfish-hostel.de`.
+4. Optional: Healthcheck (`HEALTHCHECK_URL`) einrichten.
+
+**Am Starttag, vor dem Lauf** (Cronjob: `15 6-11 * * *`, also stündlich zu :15 zwischen 6 und 11 Uhr)
+5. Die `.env` vor dem ersten Lauf der gewünschten Stunde umstellen:
+   ```
+   SEND_MODUS=live
+   SEND_ANREISE_AB=<Datum von morgen, JJJJ-MM-TT>
+   ```
+   Gäste, die am Starttag anreisen, werden damit ausgelassen.
+6. Die CSV von heute muss im Postfach liegen. Ohne Import von heute sendet `--live` nichts (`MAX_IMPORT_ALTER_TAGE=0`).
+
+**Nach dem ersten Lauf**
+7. Log prüfen: `tail -50 data/daily.log`. Erwartet: „Modus live: N gesendet, … Fehler“; die Zeile „N Gast/Gäste mit Anreise vor … bekommen keine Mail“ nennt die ausgelassenen Gäste.
+8. Stand der Datenbank (nur Zahlen, keine Gästedaten): `cd src && python3 db_status.py`. Die Zahl der gesendeten Mails sollte zu den fälligen Gästen passen.
+9. Im Postfach `info@` unter „Gesendete Elemente“ Stichproben ansehen.
+10. Mit Antworten und Abwesenheitsnotizen der Gäste rechnen; sie gehen an `info@`.
+
+**Wenn etwas schiefgeht**
+11. Sofort anhalten: in der `.env` `SEND_MODUS=vorschau`. Schon verschickte Mails lassen sich nicht zurückholen.
+12. Gäste ohne Mail sind gewollt, wenn ihre Adresse auf der Ausnahmeliste steht oder die Buchung mehrere Aufenthalte hat (Warn-Mail an `info@`).
+13. Fehlgeschlagene Mails werden beim nächsten Lauf bis zu dreimal erneut versucht.
+
+**Danach**
+14. Normalbetrieb: jeder Gast bekommt seine Mail 3 Tage vor Anreise. `SEND_ANREISE_AB` kann stehen bleiben (ein vergangenes Datum wirkt nicht mehr).
+
 ## Offen
 
 1. **Livegang** (Beschluss 23.11.2026: erst Testlauf, dann Start ab morgen anreisenden Gästen). Ablauf:
-   * **Vorher:** Azure-App mit `Mail.Send` (Punkt 2), Ausnahmeliste auf dem NAS anlegen (Trip.com-Support-Adresse), Healthcheck optional.
-   * **Testlauf:** `python3 src/run_send.py --test-an <eigene Adresse>`: alle fälligen Mails (und Warn-Mails) gehen an die eigene Adresse, nichts an Gäste, kein Eintrag im Mail-Log. Dort prüfen: Darstellung, Texte, Zahlungsbereich, Leistungen, Warnungen.
+   * **Vorher:** Azure-App ist eingerichtet (erledigt), Ausnahmeliste auf dem NAS anlegen (Trip.com-Support-Adresse), Healthcheck optional.
+   * **Testlauf** (technisch erledigt am 23.11.2026, Versand an die Testadresse klappt; Inhalte noch durchsehen): `python3 src/run_send.py --test-an <eigene Adresse>`: alle fälligen Mails (und Warn-Mails) gehen an die eigene Adresse, nichts an Gäste, kein Eintrag im Mail-Log. Dort prüfen: Darstellung, Texte, Zahlungsbereich, Leistungen, Warnungen.
    * **Start:** In der `.env` `SEND_MODUS=live` und `SEND_ANREISE_AB=<Tag nach dem Starttag>` setzen. Dann bekommen nur Gäste mit Anreise ab diesem Tag eine Mail; wer am Starttag anreist, wird ausgelassen (im Lauf-Log vermerkt). Die Zeile muss später nicht entfernt werden, ein vergangenes Datum wirkt nicht mehr.
    * Danach läuft der Normalbetrieb: jeder Gast bekommt seine Mail 3 Tage vor Anreise.
-2. **Azure:** Eigene Versand-App einrichten, Schritte siehe Abschnitt „Azure-App für den Versand“ (Ausführung offen: App registrieren, Secret, Exchange-RBAC, `GRAPH_*` in die `.env`, Testlauf).

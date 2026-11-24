@@ -105,6 +105,7 @@
           {{events}}          fertiges HTML, siehe Punkt 4
           {{stornofrist}}     nur im Block storno_datum, z.B. "Mi, 7. Okt"
           {{paymentlink}}     nur im Zahlungsblock, absolute URL
+          {{pfade_html}}      nur im Block mehrpfad, fertiges HTML
 
      2) BLOECKE: Jeder austauschbare Teil steht zwischen
         den Markern  BLOCK:name:START  und  BLOCK:name:END
@@ -129,7 +130,13 @@
           zahlung_rest            Kanal EGB + Rate FLEX + Anzahlung
                                   geleistet (amou1 < total)
           zahlung_gesamt          alle anderen Gäste mit Paylink
+          zahlung_anzahlung_kuenstler
+                                  statt zahlung_anzahlung bei Rate Künstler
           zahlung_agb             AGB-Satz, nur bei zahlung_anzahlung
+                                  (nicht bei Künstlern)
+          einzelpfad              Anreise/Abreise/Dauer/Gäste (ein Pfad)
+          mehrpfad                Pfadliste {{pfade_html}} statt
+                                  einzelpfad (CSV Pfade mit > 1 Pfad)
 
         Nicht verwendete Blöcke werden samt Markern entfernt.
 
@@ -199,8 +206,13 @@
 
     <div class="quickfacts" style="border-left:4px solid #6b7a3a; background-color:#ffffff; padding:14px 18px; margin:14px 0 24px 0;">
       <p style="margin-bottom:4px;"><strong>Buchungsnummer:</strong> {{buchungsnummer}}</p>
+      <!-- BLOCK:einzelpfad:START -->
       <p style="margin-bottom:4px;"><strong>Anreise:</strong> {{anreise}} &nbsp;&middot;&nbsp; <strong>Abreise:</strong> {{abreise}}</p>
       <p style="margin-bottom:4px;"><strong>Dauer:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Gäste:</strong> {{gaeste}}</p>
+      <!-- BLOCK:einzelpfad:END -->
+      <!-- BLOCK:mehrpfad:START -->
+      {{pfade_html}}
+      <!-- BLOCK:mehrpfad:END -->
       <!-- BLOCK:leistungen:START -->
       <p style="margin:12px 0 4px 0;"><strong>Leistungen:</strong></p>
       {{leistungen_html}}
@@ -236,6 +248,9 @@
     <!-- BLOCK:zahlung_anzahlung:START -->
     <p style="margin-top:14px;">Für Deine Buchung ist eine Anzahlung fällig und wurde noch nicht vorgenommen. Bitte benutze dazu folgenden Bezahllink, ansonsten können wir die Buchung nicht garantieren.</p>
     <!-- BLOCK:zahlung_anzahlung:END -->
+    <!-- BLOCK:zahlung_anzahlung_kuenstler:START -->
+    <p style="margin-top:14px;">Zahle gerne &uuml;ber den Paymentlink, falls f&uuml;r Dich einfacher.</p>
+    <!-- BLOCK:zahlung_anzahlung_kuenstler:END -->
     <!-- BLOCK:zahlung_rest:START -->
     <p style="margin-top:14px;">Du hast bereits eine Anzahlung geleistet, Deine Buchung ist garantiert. Mit folgendem Bezahllink kannst Du den Restbetrag bezahlen.</p>
     <!-- BLOCK:zahlung_rest:END -->
@@ -304,13 +319,12 @@
       </tr>
     </table>
 
-    <!-- Spätanreise. Die Frist "bis zum Vortag" ist ein Vorschlag
-         und noch nicht entschieden – hier ggf. anpassen. -->
+    <!-- Spätanreise (Text mit dem Hostel abgestimmt). -->
     <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-top:14px;">
       <tr>
         <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
           <strong>Kommst Du außerhalb der Rezeptionszeiten an?</strong>
-          Sag uns bitte vorher Bescheid, am besten bis zum Tag vor Deiner Anreise &ndash; telefonisch unter +49&nbsp;931&nbsp;3040430 oder per E-Mail an <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. Dann finden wir einen Weg, wie Du reinkommst.
+          Das gilt auch für den Winter: Von November bis März ist die Rezeption sonntags bis donnerstags zwischen 14:00 und 18:00&nbsp;Uhr geschlossen. Sag uns bitte vorher Bescheid, am besten bis zum Tag vor Deiner Anreise, und nenne uns Deine ungefähre Ankunftszeit &ndash; telefonisch unter <a href="tel:+499313040430">+49&nbsp;931&nbsp;3040430</a> oder per E-Mail an <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. Wir klären dann mit Dir, ob ein Self-Check-in möglich ist.
         </td>
       </tr>
     </table>

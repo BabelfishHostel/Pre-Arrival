@@ -114,10 +114,12 @@ def _vcc(text: Optional[str]) -> int:
 
 
 def _eingecheckt(zeile: dict) -> int:
-    """Bereits eingecheckt: 1, wenn CHECKIO den Wert 1 hat (auch 'yes'/'ja'), sonst 0 (leer, 0, fehlende Spalte).
+    """Bereits eingecheckt: 1, wenn CHECKIO den Wert 1 hat (auch 'yes'/'ja'), sonst 0 (leer, 0). Fehlt die Spalte ganz: None.
 
     Die Spalte CHECKIN der CSV wird nicht ausgewertet (enthält 'O').
     """
+    if "CHECKIO" not in zeile:
+        return None     # Spalte fehlt: bisherigen Stand in der Datenbank nicht überschreiben (siehe UPSERT)
     return _vcc(zeile.get("CHECKIO"))
 
 
@@ -128,8 +130,10 @@ def _paylink(text: Optional[str]) -> Optional[str]:
 
 
 def _rate(text: Optional[str]) -> Optional[str]:
-    """Normalisiert die Rate auf 'flex' (FLEX), 'nrf' (NRF = nicht erstattbar) bzw. 'fix', sonst None."""
+    """Normalisiert die Rate auf 'flex' (FLEX), 'nrf' (NRF = nicht erstattbar), 'fix' bzw. 'kuenstler', sonst None."""
     t = (text or "").strip().lower()
+    if t.startswith("künstl") or t.startswith("kuenstl"):
+        return "kuenstler"      # ASSD liefert den Wert gekürzt als "Künstle"
     if t.startswith("flex"):
         return "flex"
     if t.startswith("nrf"):
@@ -194,17 +198,18 @@ def _zeile_lesen(zeile: dict) -> dict:
         "leistungen": (zeile.get("room") or "").strip() or None,    # roh, siehe leistungen.py
         "vcc": _vcc(zeile.get("VCC")),
         "eingecheckt": _eingecheckt(zeile),
+        "pfade": (zeile.get("Pfade") or "").strip() or None,     # roh, siehe leistungen.py
     }
 
 
 UPSERT = """
 INSERT INTO arrivals (reg_nummer, vorname, nachname, email, anreise, abreise,
                       buchungsdatum, anzahl_personen, kanal, sprache, rate, buchungsnummer,
-                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, leistungen, vcc, eingecheckt, import_id,
+                      paylink, vorauszahlung, vorausdatum, schon_eingegangen, restbetrag, zahlbetrag, leistungen, vcc, eingecheckt, pfade, import_id,
                       erstmals_importiert, zuletzt_gesehen)
 VALUES (:reg_nummer, :vorname, :nachname, :email, :anreise, :abreise,
         :buchungsdatum, :anzahl_personen, :kanal, :sprache, :rate, :buchungsnummer,
-        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag, :leistungen, :vcc, :eingecheckt,
+        :paylink, :vorauszahlung, :vorausdatum, :schon_eingegangen, :restbetrag, :zahlbetrag, :leistungen, :vcc, :eingecheckt, :pfade,
         :import_id, :jetzt, :jetzt)
 ON CONFLICT(reg_nummer) DO UPDATE SET
     vorname = excluded.vorname,           nachname = excluded.nachname,
@@ -215,7 +220,8 @@ ON CONFLICT(reg_nummer) DO UPDATE SET
     buchungsnummer = excluded.buchungsnummer, paylink = excluded.paylink,
     vorauszahlung = excluded.vorauszahlung, vorausdatum = excluded.vorausdatum,
     schon_eingegangen = excluded.schon_eingegangen, restbetrag = excluded.restbetrag,
-    zahlbetrag = excluded.zahlbetrag,     leistungen = excluded.leistungen, vcc = excluded.vcc, eingecheckt = excluded.eingecheckt,
+    zahlbetrag = excluded.zahlbetrag,     leistungen = excluded.leistungen, vcc = excluded.vcc,
+    eingecheckt = COALESCE(excluded.eingecheckt, arrivals.eingecheckt), pfade = excluded.pfade,
     import_id = excluded.import_id,       zuletzt_gesehen = excluded.zuletzt_gesehen
 """
 
@@ -276,6 +282,11 @@ def importiere_csv(conn: sqlite3.Connection, pfad: Path) -> ImportErgebnis:
         raise ImportFehler(f"Pflichtspalten fehlen: {', '.join(fehlend)}")
 
     ergebnis = ImportErgebnis()
+    if text.strip() and "CHECKIO" not in kopf:
+        ergebnis.hinweise.append(
+            "Spalte CHECKIO fehlt in der CSV: bereits eingecheckte Gäste werden nicht erkannt "
+            "(bisher gespeicherter Stand bleibt unverändert)."
+        )
     zeitpunkt = jetzt()
     with conn:
         cur = conn.execute(

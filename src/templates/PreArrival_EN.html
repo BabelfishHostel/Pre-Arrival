@@ -113,7 +113,9 @@
        <a href="EVENTSEITE_URL">our events page</a>.</p>
 
      Blocks: storno_morgen, storno_heute, storno_datum, zahlung,
-     zahlung_anzahlung, zahlung_rest, zahlung_gesamt, zahlung_agb –
+     zahlung_anzahlung, zahlung_anzahlung_kuenstler, zahlung_rest,
+     zahlung_gesamt, zahlung_agb, einzelpfad, mehrpfad
+     (placeholder {{pfade_html}} only inside mehrpfad) –
      identical names to the German file so the same script logic
      applies to both.
      ============================================================ -->
@@ -135,8 +137,13 @@
 
     <div class="quickfacts" style="border-left:4px solid #6b7a3a; background-color:#ffffff; padding:14px 18px; margin:14px 0 24px 0;">
       <p style="margin-bottom:4px;"><strong>Booking number:</strong> {{buchungsnummer}}</p>
+      <!-- BLOCK:einzelpfad:START -->
       <p style="margin-bottom:4px;"><strong>Arrival:</strong> {{anreise}} &nbsp;&middot;&nbsp; <strong>Departure:</strong> {{abreise}}</p>
       <p style="margin-bottom:4px;"><strong>Length of stay:</strong> {{naechte}} &nbsp;&middot;&nbsp; <strong>Guests:</strong> {{gaeste}}</p>
+      <!-- BLOCK:einzelpfad:END -->
+      <!-- BLOCK:mehrpfad:START -->
+      {{pfade_html}}
+      <!-- BLOCK:mehrpfad:END -->
       <!-- BLOCK:leistungen:START -->
       <p style="margin:12px 0 4px 0;"><strong>Services:</strong></p>
       {{leistungen_html}}
@@ -172,6 +179,9 @@
     <!-- BLOCK:zahlung_anzahlung:START -->
     <p style="margin-top:14px;">A deposit is due for your booking and has not been paid yet. Please use the following payment link, otherwise we cannot guarantee your booking.</p>
     <!-- BLOCK:zahlung_anzahlung:END -->
+    <!-- BLOCK:zahlung_anzahlung_kuenstler:START -->
+    <p style="margin-top:14px;">Feel free to pay via the payment link if that&rsquo;s easier for you.</p>
+    <!-- BLOCK:zahlung_anzahlung_kuenstler:END -->
     <!-- BLOCK:zahlung_rest:START -->
     <p style="margin-top:14px;">You have already paid a deposit, so your booking is guaranteed. You can use the following payment link to pay the remaining balance.</p>
     <!-- BLOCK:zahlung_rest:END -->
@@ -241,7 +251,7 @@
       <tr>
         <td style="background-color:#eef0e6; border-left:4px solid #6b7a3a; padding:10px 14px;">
           <strong>Arriving outside reception hours?</strong>
-          Please let us know in advance, ideally by the day before you arrive &ndash; call +49&nbsp;931&nbsp;3040430 or email <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. We'll sort out how you get in.
+          This also applies in winter: from November to March, reception is closed Sunday to Thursday between 14:00 and 18:00. Please let us know in advance, ideally by the day before you arrive, and tell us your approximate arrival time &ndash; call <a href="tel:+499313040430">+49&nbsp;931&nbsp;3040430</a> or email <a href="mailto:info@babelfish-hostel.de">info@babelfish-hostel.de</a>. We&rsquo;ll then check with you whether self check-in is possible.
         </td>
       </tr>
     </table>

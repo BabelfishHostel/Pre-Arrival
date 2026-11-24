@@ -27,11 +27,15 @@ ARTIKEL_NAMEN = {
     "internet deposit": {"de": "Bereits über das Portal bezahlt", "en": "Already paid via the platform"},
     "appartement": {"de": "Apartment für 4", "en": "Apartment for 4"},
     "apartment": {"de": "Apartment für 4", "en": "Apartment for 4"},
+    "apartement": {"de": "Apartment für 4", "en": "Apartment for 4"},    # Tippfehler in ASSD (Spalte Pfade)
+    "einzelzimmer": {"de": "Einzelzimmer", "en": "Single room"},
+    "doppelzimmer": {"de": "Doppelzimmer", "en": "Double room"},
+    "doppelzimmer studio": {"de": "Doppelzimmer Studio", "en": "Double room Studio"},
 }
 DE_WOERTER = (("mixed", "gemischt"), ("female", "weiblich"), ("male", "männlich"))
 
 # Mehrbettzimmer: ASSD liefert "10-Bettzimmer mixed" (DE) bzw. "10 bed mixed room" (EN); gebucht werden Betten.
-MEHRBETT_DE = re.compile(r"^(\d+)-Bettzimmer (mixed|female|male)$", re.I)
+MEHRBETT_DE = re.compile(r"^(\d+)-Bettzimmer[ _](mixed|female|male)$", re.I)
 MEHRBETT_EN = re.compile(r"^(\d+) bed (?:room )?(mixed|female|male)(?: only)?(?: room)?$", re.I)
 MEHRBETT_NAME = {
     "de": {"mixed": "Bett im {n}-Bettzimmer gender-mixed", "female": "Bett im {n}-Bettzimmer für Frauen",
@@ -39,6 +43,9 @@ MEHRBETT_NAME = {
     "en": {"mixed": "Bed in {n}-bed gender-mixed room", "female": "Bed in {n}-bed female only room",
            "male": "Bed in {n}-bed male only room"},
 }
+# Private Mehrbettzimmer (Pfade: "4-Bettzimmer_private")
+PRIVAT_DE = re.compile(r"^(\d+)-Bettzimmer[ _]private$", re.I)
+PRIVAT_NAME = {"de": "{n}-Bettzimmer (privat)", "en": "{n}-bed private room"}
 # Rate -> Zusatz hinter jedem Zimmer (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
 RATE_ZUSATZ = {
     "nrf": {"de": "nicht erstattbar", "en": "non-refundable"},
@@ -95,6 +102,13 @@ def bezeichnung(name: str, sprache: str) -> str:
     bekannt = ARTIKEL_NAMEN.get(name.strip().casefold())
     if bekannt:
         return bekannt.get(sprache, bekannt["en"])
+    name = name.replace("_", " ")
+    bekannt = ARTIKEL_NAMEN.get(name.strip().casefold())
+    if bekannt:
+        return bekannt.get(sprache, bekannt["en"])
+    pm = PRIVAT_DE.match(name.strip())
+    if pm:
+        return PRIVAT_NAME.get(sprache, PRIVAT_NAME["en"]).format(n=pm.group(1))
     mb = _mehrbett(name)
     if mb:
         n, art = mb
@@ -145,6 +159,12 @@ def gesamtsumme(positionen: List[Position], zahlbetrag: Optional[float]) -> Opti
     return summe if summe > 0 else None
 
 
+def gesamtrabatt(positionen: List[Position]) -> float:
+    """Summe aller Rabatte in EUR: Anzahl x Einzelpreis minus rabattierter Gesamtpreis (nur Positionen mit Rabatt)."""
+    return round(sum(p.anzahl * p.einzelpreis - p.gesamt for p in positionen
+                     if p.rabatt and p.anzahl > 0 and p.gesamt >= 0), 2)
+
+
 def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], sprache: str,
                     rate: Optional[str] = None) -> str:
     """Tabelle (Datum | Leistung | Betrag) mit Inline-Stilen für Mailclients."""
@@ -158,7 +178,8 @@ def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], spr
             titel = f"{p.anzahl} &times; {name}{html.escape(rate_zusatz(p.name, rate, sprache))}"
             teile = []
             if p.anzahl > 1:
-                teile.append(f"{p.anzahl} &times; {_preis(p.einzelpreis, sprache)}")
+                ohne = _preis(round(p.anzahl * p.einzelpreis, 2), sprache)
+                teile.append(f"{p.anzahl} &times; {_preis(p.einzelpreis, sprache)}" + (f" = {ohne}" if p.rabatt else ""))
             elif p.rabatt:
                 teile.append(_preis(p.einzelpreis, sprache))
             if p.rabatt:
@@ -177,6 +198,14 @@ def leistungen_html(positionen: List[Position], zahlbetrag: Optional[float], spr
             f'<td align="right" style="{zelle} border-top:2px solid #6b7a3a; white-space:nowrap;">'
             f"<strong>{_preis(summe, sprache)}</strong></td></tr>"
         )
+        rabatt = gesamtrabatt(positionen)
+        if rabatt > 0:
+            text = "darin enthaltener Rabatt" if sprache == "de" else "discount included"
+            zeilen.append(
+                f'<tr><td colspan="2" style="padding:2px 0 6px 0; font-size:12px; color:#6b7a3a;">{text}</td>'
+                f'<td align="right" style="padding:2px 0 6px 0; font-size:12px; color:#6b7a3a; white-space:nowrap;">'
+                f"{_preis(rabatt, sprache)}</td></tr>"
+            )
     return '<table width="100%" border="0" cellpadding="0" cellspacing="0" style="font-size:14px;">' + "".join(zeilen) + "</table>"
 
 
@@ -195,3 +224,59 @@ def aufenthalte(positionen: List[Position]) -> List[Tuple[date, date]]:
         else:
             ergebnis.append((t, t))
     return ergebnis
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Spalte `Pfade` (ein Pfad = ein Zimmerblock der Buchung):
+#   "Anreise Abreise Zimmerkategorie1 Zimmerkategorie2 ...", mehrere Pfade getrennt mit "|".
+# Mehr als ein Pfad: Die Mail zeigt die Pfade statt Anreise/Abreise/Dauer/Gäste.
+# ---------------------------------------------------------------------------------------------------------
+@dataclass
+class Pfad:
+    anreise: date
+    abreise: date
+    zimmer: List[str]       # Kategorien wie geliefert (z. B. "4-Bettzimmer_private"), Wiederholungen = mehrere Betten/Zimmer
+
+
+def parse_pfade(text: Optional[str]) -> Optional[List[Pfad]]:
+    """Zerlegt die Spalte `Pfade`. None, wenn leer oder ein Pfad nicht lesbar ist."""
+    if not text or not text.strip():
+        return None
+    pfade: List[Pfad] = []
+    for teil in text.split("|"):
+        teil = teil.strip()
+        if not teil:
+            continue
+        tokens = teil.split()
+        if len(tokens) < 2:
+            return None
+        try:
+            a, b = date.fromisoformat(tokens[0]), date.fromisoformat(tokens[1])
+        except ValueError:
+            return None
+        pfade.append(Pfad(a, b, tokens[2:]))
+    return pfade or None
+
+
+def mehrere_pfade(text: Optional[str]) -> bool:
+    p = parse_pfade(text)
+    return bool(p) and len(p) > 1
+
+
+def pfade_html(pfade: List[Pfad], sprache: str) -> str:
+    """Eine Zeile je Pfad: 'Do, 26.11. – Mo, 30.11.2026: 1 × ..., 2 × ...'."""
+    wt = {"de": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"], "en": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}[sprache]
+
+    def tag(d: date, jahr: bool) -> str:
+        return f"{wt[d.weekday()]}, {d.day:02d}.{d.month:02d}." + (str(d.year) if jahr else "")
+
+    zeilen = []
+    for p in sorted(pfade, key=lambda x: (x.anreise, x.abreise)):
+        gezaehlt: dict = {}
+        for z in p.zimmer:
+            gezaehlt[z] = gezaehlt.get(z, 0) + 1
+        zimmer = ", ".join(f"{n} &times; {html.escape(bezeichnung(z, sprache))}" for z, n in gezaehlt.items())
+        titel = f"{tag(p.anreise, False)} &ndash; {tag(p.abreise, True)}"
+        zeilen.append(f'<p style="margin:0 0 6px 0;"><strong>{titel}</strong>' + (f"<br>{zimmer}" if zimmer else "") + "</p>")
+    kopf = "Deine Aufenthalte:" if sprache == "de" else "Your stays:"
+    return f'<p style="margin:0 0 4px 0;"><strong>{kopf}</strong></p>' + "".join(zeilen)

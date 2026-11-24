@@ -35,6 +35,78 @@ def daten(**kw) -> MailDaten:
     return MailDaten(**basis)
 
 
+def test_rabatt_pfade_kuenstler():
+    from render import render_html, lade_vorlage, zahlung_variante
+    from leistungen import (gesamtrabatt, leistungen_html, parse_leistungen, parse_pfade, mehrere_pfade,
+                            pfade_html, bezeichnung)
+    pos = parse_leistungen("2026-11-18 6 x 10-Bettzimmer mixed 7.90 10.00 42.66|2026-11-18 1 x Frühstück 10.00 0.00 10.00")
+    h = leistungen_html(pos, None, "de")
+    assert "6 &times; 7,90 EUR = 47,40 EUR, Rabatt 10 %" in h, h
+    assert gesamtrabatt(pos) == 4.74
+    assert "darin enthaltener Rabatt" in h and "4,74 EUR" in h
+    he = leistungen_html(pos, None, "en")
+    assert "6 &times; EUR 7.90 = EUR 47.40, discount 10 %" in he and "discount included" in he and "EUR 4.74" in he
+    # ohne Rabatt: keine Rabattzeile, kein "="
+    pos2 = parse_leistungen("2026-11-18 2 x Frühstück 10.00 0.00 20.00")
+    h2 = leistungen_html(pos2, None, "de")
+    assert "Rabatt" not in h2 and " = " not in h2
+
+    ein = "2026-11-26 2026-11-28 Doppelzimmer"
+    mehr = ("2026-11-26 2026-11-30 6-Bettzimmer_mixed 4-Bettzimmer_private 4-Bettzimmer_private"
+            "|2026-11-27 2026-11-28 Apartement")
+    assert not mehrere_pfade(ein) and mehrere_pfade(mehr) and not mehrere_pfade(None) and not mehrere_pfade("kaputt")
+    assert parse_pfade("2026-13-01 2026-11-02 X") is None
+    ph = pfade_html(parse_pfade(mehr), "de")
+    assert "Do, 26.11. &ndash; Mo, 30.11.2026" in ph and "2 &times; 4-Bettzimmer (privat)" in ph
+    assert "Apartment für 4" in ph and "Deine Aufenthalte" in ph
+    assert "Your stays" in pfade_html(parse_pfade(mehr), "en") and "Thu, 26.11." in pfade_html(parse_pfade(mehr), "en")
+    assert bezeichnung("Doppelzimmer_studio", "en") == "Double room Studio"
+    for sp in ("de", "en"):
+        a = render_html(lade_vorlage(sp), daten(sprache=sp, pfade=ein))
+        b = render_html(lade_vorlage(sp), daten(sprache=sp, pfade=mehr))
+        c = render_html(lade_vorlage(sp), daten(sprache=sp, pfade=None))
+        assert ("Dauer:" if sp == "de" else "Length of stay:") in a and ("Dauer:" if sp == "de" else "Length of stay:") in c
+        assert ("Dauer:" if sp == "de" else "Length of stay:") not in b
+        assert ("Anreise:" if sp == "de" else "Arrival:") not in b and "Mo, 30.11.2026" in b.replace("Mon, 30.11.2026", "Mo, 30.11.2026")
+
+    # Künstler: eigener Anzahlungstext, kein AGB-Satz
+    d = daten(rate="kuenstler", kanal=None)
+    assert zahlung_variante(d) == "anzahlung"
+    de = render_html(lade_vorlage("de"), d)
+    assert "Zahle gerne &uuml;ber den Paymentlink" in de and "Anzahlung fällig" not in de and "AGB" not in de
+    assert "Jetzt bezahlen" in de
+    en = render_html(lade_vorlage("en"), daten(sprache="en", rate="kuenstler", kanal=None))
+    assert "payment link if that" in en and "deposit is due" not in en and "General Terms" not in en
+    normal = render_html(lade_vorlage("de"), daten())
+    assert "Anzahlung fällig" in normal and "AGB" in normal and "Zahle gerne" not in normal
+
+    # Rezeptionstext
+    assert "Von November bis März ist die Rezeption sonntags bis donnerstags" in normal
+    assert 'href="tel:+499313040430"' in normal and "Self-Check-in" in normal
+    ene = render_html(lade_vorlage("en"), daten(sprache="en"))
+    assert "from November to March" in ene and "self check-in" in ene
+
+
+def test_import_pfade_kuenstler_checkio():
+    from csv_import import importiere_csv, _rate
+    assert _rate("Künstle") == "kuenstler" and _rate("Künstler") == "kuenstler" and _rate("FLEX") == "flex"
+    kopf = "RegNummer;Buchungsnummer;Anreise;Abreise;AnzahlPersonen;Vorname;Email;Rate;Pfade"
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "p.sqlite"); init_db(conn)
+        # Bestand: Gast mit eingecheckt = 1
+        f1 = Path(tmp) / "1.csv"
+        f1.write_text("RegNummer;Anreise;Abreise;Email;CHECKIO\n1;2026-11-26;2026-11-27;a@x.de;1\n", encoding="utf-8")
+        importiere_csv(conn, f1)
+        assert conn.execute("SELECT eingecheckt FROM arrivals WHERE reg_nummer='1'").fetchone()[0] == 1
+        # neue CSV ohne CHECKIO: Stand bleibt, Hinweis kommt, pfade/rate werden gespeichert
+        f2 = Path(tmp) / "2.csv"
+        f2.write_text(kopf + "\n1;B1;2026-11-26;2026-11-27;2;Ann;a@x.de;Künstle;2026-11-26 2026-11-27 Doppelzimmer\n", encoding="utf-8")
+        e = importiere_csv(conn, f2)
+        r = conn.execute("SELECT eingecheckt, rate, pfade FROM arrivals WHERE reg_nummer='1'").fetchone()
+        assert tuple(r) == (1, "kuenstler", "2026-11-26 2026-11-27 Doppelzimmer"), tuple(r)
+        assert any("CHECKIO fehlt" in h for h in e.hinweise)
+
+
 def test_format():
     assert datum_lang(ANREISE, "de") == "Fr, 9. Okt 2026" and datum_lang(ANREISE, "en") == "Fri, 9 Oct 2026"
     assert betrag_text(528, "de") == "528,00 EUR" and betrag_text(528, "en") == "EUR 528.00"
@@ -319,7 +391,7 @@ def test_migration():
         init_db(conn)
         spalten = {r["name"] for r in conn.execute("PRAGMA table_info(arrivals)")}
         assert {"rate", "vorauszahlung", "vorausdatum", "schon_eingegangen", "restbetrag", "zahlbetrag", "leistungen"} <= spalten
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
         init_db(conn)  # idempotent
         conn.close()
 
@@ -406,7 +478,8 @@ def test_csv_2026_11():
         init_db(conn)
         e = importiere_csv(conn, pfad)
         assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (7, 6, 0, 1), e
-        assert "keine E-Mail" in e.hinweise[0]
+        assert any("keine E-Mail" in h for h in e.hinweise)
+        assert any("CHECKIO fehlt" in h for h in e.hinweise)
         q = ev.EventQuelle("")
         k = SendKonfig()
         heute = date(2026, 11, 10)    # Versand 3 Tage vor Anreise
@@ -468,7 +541,8 @@ def test_csv_schutz():
         pfad.write_bytes(NEUE_CSV_2026_11.replace("b@example.com", "kaputt").encode("utf-8"))
         e = importiere_csv(conn, pfad)
         assert (e.gesamt, e.neu, e.fehler, e.ohne_email) == (7, 5, 1, 1), e
-        assert "keine E-Mail" in e.hinweise[0] and "kaputt" in e.fehler_details[0]
+        assert any("keine E-Mail" in h for h in e.hinweise)
+        assert any("CHECKIO fehlt" in h for h in e.hinweise) and "kaputt" in e.fehler_details[0]
     with tempfile.TemporaryDirectory() as tmp:
         conn = verbinde(Path(tmp) / "u.sqlite")
         init_db(conn)
@@ -642,7 +716,7 @@ def test_leistungen():
     assert "3 &times; Bett im 10-Bettzimmer gender-mixed, nicht erstattbar<br>" in leistungen_html(pos, 109.9, "de", "nrf")
     assert "1 &times; Bett im 4-Bettzimmer für Frauen, nicht erstattbar</td>" in leistungen_html(pos, 109.9, "de", "nrf")
     assert "3 &times; Frühstück<br>" in leistungen_html(pos, 109.9, "de", "nrf")      # kein Zusatz bei Frühstück
-    assert "3 &times; 21,89 EUR, Rabatt 10 %" in de and "59,10 EUR" in de and "3 &times; 7,90 EUR" in de
+    assert "3 &times; 21,89 EUR = 65,67 EUR, Rabatt 10 %" in de and "59,10 EUR" in de and "3 &times; 7,90 EUR" in de
     assert "Gesamtbetrag" in de and "109,90 EUR" in de and "mixed" not in de.replace("gender-mixed", "")
     assert "Rabatt" not in leistungen_html(parse_leistungen("2026-11-18 1 x Einzelzimmer 46.90 0.00 46.90"), None, "de")
     en = leistungen_html(parse_leistungen(ROOM_EN), 51.51, "en")
@@ -869,7 +943,7 @@ def test_eingecheckt():
     """CHECKIO = 1: Gast ist schon eingecheckt, keine Mail (im Live-Lauf als 'uebersprungen' protokolliert)."""
     from csv_import import _eingecheckt, importiere_csv
     assert [_eingecheckt(z) for z in ({"CHECKIO": "1"}, {"CHECKIN": "O", "CHECKIO": "1"}, {"CHECKIN": "O", "CHECKIO": "0"},
-                                      {"CHECKIN": "O", "CHECKIO": ""}, {"CHECKIN": "1"}, {})] == [1, 1, 0, 0, 0, 0]
+                                      {"CHECKIN": "O", "CHECKIO": ""}, {"CHECKIN": "1"}, {})] == [1, 1, 0, 0, None, None]
     kopf = KOPF_NEU.replace(";Restbetrag", ";CHECKIN;CHECKIO;Restbetrag")
     z = "     {r};;1;2026-10-09 00:00:00;2026-10-11 00:00:00;2026-10-02;1;{n};Test;;;;{m}@example.com;E;;;0.00;0000-00-00;0.00;{ci};{io};20.00;20.00;https://pay.example/{r}"
     zeilen = [z.format(r="92001", n="Drin", m="a", ci="O", io="1"), z.format(r="92002", n="Drin2", m="b", ci="", io="1"),
