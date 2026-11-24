@@ -45,7 +45,7 @@ MEHRBETT_NAME = {
 }
 # Private Mehrbettzimmer (Pfade: "4-Bettzimmer_private")
 PRIVAT_DE = re.compile(r"^(\d+)-Bettzimmer[ _]private$", re.I)
-PRIVAT_NAME = {"de": "{n}-Bettzimmer (privat)", "en": "{n}-bed private room"}
+PRIVAT_NAME = {"de": "{n}-Bettzimmer privat", "en": "{n}-bed private room"}
 # Rate -> Zusatz hinter jedem Zimmer (NRF = nicht erstattbar, FLEX = erstattbar, sonst nichts)
 RATE_ZUSATZ = {
     "nrf": {"de": "nicht erstattbar", "en": "non-refundable"},
@@ -274,7 +274,9 @@ def pfade_html(pfade: List[Pfad], sprache: str) -> str:
     for p in sorted(pfade, key=lambda x: (x.anreise, x.abreise)):
         gezaehlt: dict = {}
         for z in p.zimmer:
-            gezaehlt[z] = gezaehlt.get(z, 0) + 1
+            m = re.match(r"^(\d+)x(.+)$", z)      # Dorms: "6x6-Bettzimmer_mixed" = 6 Betten im 6-Bettzimmer
+            anz, art = (int(m.group(1)), m.group(2)) if m else (1, z)
+            gezaehlt[art] = gezaehlt.get(art, 0) + anz
         zimmer = ", ".join(f"{n} &times; {html.escape(bezeichnung(z, sprache))}" for z, n in gezaehlt.items())
         titel = f"{tag(p.anreise, False)} &ndash; {tag(p.abreise, True)}"
         zeilen.append(f'<p style="margin:0 0 6px 0;"><strong>{titel}</strong>' + (f"<br>{zimmer}" if zimmer else "") + "</p>")

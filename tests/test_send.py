@@ -57,8 +57,10 @@ def test_rabatt_pfade_kuenstler():
     assert not mehrere_pfade(ein) and mehrere_pfade(mehr) and not mehrere_pfade(None) and not mehrere_pfade("kaputt")
     assert parse_pfade("2026-13-01 2026-11-02 X") is None
     ph = pfade_html(parse_pfade(mehr), "de")
-    assert "Do, 26.11. &ndash; Mo, 30.11.2026" in ph and "2 &times; 4-Bettzimmer (privat)" in ph
-    assert "Apartment für 4" in ph and "Deine Aufenthalte" in ph
+    assert "Do, 26.11. &ndash; Mo, 30.11.2026" in ph and "2 &times; 4-Bettzimmer privat" in ph
+    assert "Apartment für 4" in ph
+    dorm = pfade_html(parse_pfade("2026-11-26 2026-11-27 6x6-Bettzimmer_mixed 1x4-Bettzimmer_female 6x6-Bettzimmer_mixed"), "de")
+    assert "12 &times; Bett im 6-Bettzimmer gender-mixed" in dorm and "1 &times; Bett im 4-Bettzimmer für Frauen" in dorm, dorm and "Deine Aufenthalte" in ph
     assert "Your stays" in pfade_html(parse_pfade(mehr), "en") and "Thu, 26.11." in pfade_html(parse_pfade(mehr), "en")
     assert bezeichnung("Doppelzimmer_studio", "en") == "Double room Studio"
     for sp in ("de", "en"):
