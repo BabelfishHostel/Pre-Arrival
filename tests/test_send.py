@@ -1011,6 +1011,33 @@ def test_ausnahmeliste():
         assert sorted(m["To"] for m in gesendet) == ["support@example.com", "y@domain.example"], [m["To"] for m in gesendet]
 
 
+def test_kopie_an():
+    """SEND_KOPIE_AN: Blindkopie nur im Live-Modus, nicht im Testlauf, nicht in Warn-Mails."""
+    import os
+    from run_send import lese_konfig
+    os.environ["SEND_KOPIE_AN"] = " a@x.de; b@x.de "
+    try:
+        assert lese_konfig().kopie_an == "a@x.de, b@x.de"
+    finally:
+        del os.environ["SEND_KOPIE_AN"]
+    assert lese_konfig().kopie_an == ""
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = verbinde(Path(tmp) / "t.sqlite"); init_db(conn)
+        _gast(conn, "1", "Normal")
+        q = ev.EventQuelle("")
+        gesendet = []
+        def sender(msg):
+            gesendet.append(msg); return msg["Message-ID"]
+        verarbeite(conn, SendKonfig(kopie_an="mon@x.de"), q, HEUTE, "test", sender, "test@x.de")
+        assert gesendet[0]["Bcc"] is None and gesendet[0]["To"] == "test@x.de"
+        gesendet.clear()
+        verarbeite(conn, SendKonfig(kopie_an="mon@x.de, b@x.de"), q, HEUTE, "live", sender)
+        assert gesendet[0]["To"] == "a@example.com" and gesendet[0]["Bcc"] == "mon@x.de, b@x.de"
+        conn.execute("DELETE FROM mail_log"); conn.commit(); gesendet.clear()
+        verarbeite(conn, SendKonfig(), q, HEUTE, "live", sender)
+        assert gesendet[0]["Bcc"] is None
+
+
 def test_startregel():
     """SEND_ANREISE_AB: Gäste mit früherer Anreise bekommen keine Mail, die übrigen schon; ungültiges Datum = Konfigfehler."""
     import os

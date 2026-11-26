@@ -115,6 +115,10 @@ Der Versand läuft über Microsoft Graph (`POST /users/info@babelfish-hostel.de/
 5. **`conf/.env` auf dem NAS:** `GRAPH_CLIENT_ID=`, `GRAPH_CLIENT_SECRET=` (Tenant-ID kommt aus `AZURE_TENANT_ID`, oder `GRAPH_TENANT_ID`). Diese Werte haben Vorrang vor `AZURE_*` (Code: `graph_zugang` in `src/run_send.py`); fehlt eines von beiden, bricht der Versand mit Konfigurationsfehler ab, es wird nie gemischt.
 6. **Prüfen:** `python3 src/run_send.py --test-an <eigene Adresse>`. Kommt ein 403 („ErrorAccessDenied“), ist die RBAC-Zuweisung noch nicht aktiv (Wartezeit) oder falsch; **nicht** durch eine Entra-Berechtigung beheben.
 
+## Blindkopie zur Überwachung
+
+`SEND_KOPIE_AN=<Adresse>` in der `.env` (mehrere Adressen mit Komma): Jede Gästemail geht im Live-Modus zusätzlich als Blindkopie (BCC) an diese Adresse; der Gast sieht sie nicht. Gedacht für die Anfangszeit, um die Mails mitzulesen. Leer lassen oder Zeile entfernen schaltet es ab. Kein Effekt bei `--test-an`, Trockenlauf und Warn-Mails. Die Kopie steckt in derselben Nachricht, es gibt keinen zweiten Versand und keinen eigenen Log-Eintrag. Ob Graph die Blindkopie zustellt, am ersten Livetag im Postfach prüfen.
+
 ## Stornierte und verschobene Buchungen
 
 Der Import löscht keine Gäste, die in einer neuen CSV fehlen; sie bleiben mit dem Stand ihres letzten Imports in der Datenbank (bis 30 Tage nach Abreise). Die CSV enthält aber täglich alle Anreisen von heute bis heute + 3 Tage. Deshalb versendet der Versand-Job nur an Gäste, die im **letzten CSV-Import** stehen. Wer dort fehlt, bekommt keine Mail; das Log nennt die Buchung (RegNummer, Anreise, „nicht mehr in der aktuellen CSV, storniert oder verschoben?“). Damit nicht eine alte Gästeliste als aktuell gilt, prüft der Job vorher, ob der letzte Import jung genug ist: `MAX_IMPORT_ALTER_TAGE` (Standard 0 = nur von heute). Ist er älter (z. B. ASSD-Mail ausgeblieben), sendet `--live` nichts und meldet Fehler (Exit 1, Healthcheck-Fehlerping); Trockenlauf und Test warnen nur. Wird dieselbe CSV nochmals eingelesen, wird der Zeitstempel des Imports aufgefrischt, und kehrt ein älterer Stand zurück, wird er neu eingelesen. Hat ein Gast die Mail schon bekommen und storniert danach, lässt sich das nicht zurückholen. *(Lücke am 17.11.2026 beim Prüfen der Vorschau gefunden und geschlossen.)*
@@ -212,6 +216,7 @@ Die Mail bekommen alle Gäste mit gültiger E-Mail-Adresse, auch Buchungen vor O
    ```
    SEND_MODUS=live
    SEND_ANREISE_AB=<Datum von morgen, JJJJ-MM-TT>
+   SEND_KOPIE_AN=<Überwachungsadresse>   # optional, siehe unten
    ```
    Gäste, die am Starttag anreisen, werden damit ausgelassen.
 6. Die CSV von heute muss im Postfach liegen. Ohne Import von heute sendet `--live` nichts (`MAX_IMPORT_ALTER_TAGE=0`).

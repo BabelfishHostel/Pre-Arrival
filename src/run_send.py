@@ -61,6 +61,7 @@ class SendKonfig:
     vorschau_dir: Optional[Path] = None
     anreise_ab: Optional[date] = None       # Startregel: Gäste mit früherer Anreise bekommen keine Mail
     ausnahmen: frozenset = frozenset()      # Adressen/Domains ('@domain'), die keine Mail bekommen
+    kopie_an: str = ""                      # SEND_KOPIE_AN: Blindkopie jeder Gästemail im Live-Modus (kommagetrennt), leer = keine
 
 
 @dataclass
@@ -363,7 +364,8 @@ def verarbeite(conn: sqlite3.Connection, k: SendKonfig, events: EventQuelle, heu
             continue
 
         empfaenger = test_an if modus == "test" else z["email"]
-        msg = baue_mime(k.absender, empfaenger, mail["betreff"], mail["html"], mail["text"])
+        msg = baue_mime(k.absender, empfaenger, mail["betreff"], mail["html"], mail["text"],
+                        bcc=k.kopie_an if modus == "live" and k.kopie_an else None)
         if modus == "live":
             _log_planen(conn, z["id"])
             with conn:  # Versuch VOR dem Senden zählen, damit ein Absturz erkennbar bleibt
@@ -414,6 +416,7 @@ def lese_konfig() -> SendKonfig:
         max_import_alter_tage=int(e("MAX_IMPORT_ALTER_TAGE", "0")),
     )
     k.postfach = e("GRAPH_POSTFACH", k.absender)
+    k.kopie_an = ", ".join(a for a in re.split(r"[,;\s]+", e("SEND_KOPIE_AN", "")) if a)
     ab = e("SEND_ANREISE_AB", "").strip()
     if ab:
         try:

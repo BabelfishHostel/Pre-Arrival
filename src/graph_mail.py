@@ -33,13 +33,15 @@ class VersandFehler(Exception):
 
 
 def baue_mime(absender: str, an: str, betreff: str, html: str, text: str,
-              antwort_an: Optional[str] = None) -> EmailMessage:
+              antwort_an: Optional[str] = None, bcc: Optional[str] = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"], msg["To"], msg["Subject"] = absender, an, betreff
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=absender.split("@")[-1])
     if antwort_an:
         msg["Reply-To"] = antwort_an
+    if bcc:
+        msg["Bcc"] = bcc    # Blindkopie: Graph liest die Empfänger aus dem MIME-Kopf, der Gast sieht sie nicht
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
     return msg
